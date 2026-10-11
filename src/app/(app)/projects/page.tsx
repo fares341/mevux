@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { asc } from "drizzle-orm";
+import { db, clients } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { loadProjects, loadTeamView, calc, rules, STATUS, SIZE } from "@/lib/projects";
 import { egp } from "@/lib/finance";
@@ -23,9 +25,10 @@ function Tabs({ tab, counts, admin }: { tab: string; counts: Record<string, numb
   </div>);
 }
 
-export default async function Projects({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function Projects({ searchParams }: { searchParams: Promise<{ tab?: string; client?: string }> }) {
   const me = await requireUser();
-  const tab = (await searchParams).tab || "active";
+  const sp = await searchParams;
+  const tab = sp.tab || "active";
   if (me.role !== "ADMIN") {
     const all = await loadTeamView(false);
     const mineDone = all.filter((p) => p.status === "CLOSED" && p.roles.some((r) => r.members.some((m) => m.userId === me.id)));
@@ -51,7 +54,7 @@ export default async function Projects({ searchParams }: { searchParams: Promise
   return (<>
     <div className="head"><div><span className="tag">العمل</span><h1>المشاريع</h1><p className="sub">الأرقام بالجنيه.</p></div></div>
     <Tabs tab={tab} admin counts={counts} />
-    {tab === "new" && <div className="card"><h2>مشروع جديد</h2><NewProject /></div>}
+    {tab === "new" && <div className="card"><h2>مشروع جديد</h2><NewProject clients={await db.select({ id: clients.id, name: clients.name }).from(clients).orderBy(asc(clients.name))} clientId={sp.client} /></div>}
     {tab !== "new" && !ps.length && <div className="note">مفيش مشاريع في "{g.label}". {g.hint && `(${g.hint})`}</div>}
     {ps.length > 0 && <div className="card plain table-wrap"><table>
       <thead><tr><th>المشروع</th><th>العميل</th><th>المرحلة</th><th>الحجم</th><th>السعر</th><th>المدفوع</th><th>أجور الفريق</th><th>الصافي</th><th>نصيبك</th></tr></thead>

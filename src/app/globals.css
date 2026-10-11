@@ -98,3 +98,13 @@ a.btn { text-decoration: none; }
 a.btn:hover { background: var(--blue); color: #fff; }
 a.btn.ghost-link { background: var(--panel); color: var(--navy); border: 1px solid var(--line); }
 a.btn.ghost-link:hover { background: var(--pale); color: var(--navy); }
+
+/* Deal pipeline: one step per stage, current step highlighted */
+.pipeline { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 6px; margin-bottom: 18px; }
+.pipeline .step { background: var(--panel); border: 1px solid var(--line); border-bottom: 3px solid var(--line); border-radius: 6px; padding: 10px; color: var(--ink); display: flex; flex-direction: column; gap: 4px; text-decoration: none; }
+.pipeline .step b { font-size: 13px; color: var(--navy); }
+.pipeline .step .n { font-size: 11px; color: var(--muted); }
+.pipeline .step .c { font-size: 20px; font-weight: 800; color: var(--navy); }
+.pipeline .step.past { border-bottom-color: var(--cyan); background: var(--pale); }
+.pipeline .step.on { border-color: var(--blue); border-bottom-color: var(--blue); background: var(--light); }
+a.step:hover { border-color: var(--blue); }

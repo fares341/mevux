@@ -68,6 +68,7 @@ export const projects = pgTable("projects", {
   id: id(),
   name: text("name").notNull(),
   client: text("client").notNull(),
+  clientId: text("client_id"),
   currency: text("currency").notNull().default("EGP"),
   rate: numeric("rate", { precision: 12, scale: 4, mode: "number" }).notNull().default(1), // to EGP, frozen per project
   price: numeric("price", { precision: 14, scale: 2, mode: "number" }).notNull(),
@@ -184,5 +185,31 @@ export const credentials = pgTable("credentials", {
   username: text("username"),
   secretEnc: text("secret_enc"),
   notes: text("notes"),
+  createdAt: created(),
+});
+
+// ===== Clients & deal stages =====
+export const clientStage = pgEnum("client_stage", ["NEW", "MEETING_SET", "MEETING_DONE", "BRIEF_SENT", "NEGOTIATION", "AGREED", "ACTIVE", "DONE", "ON_HOLD", "LOST"]);
+export const clients = pgTable("clients", {
+  id: id(),
+  name: text("name").notNull(),
+  company: text("company"),
+  phone: text("phone"),
+  email: text("email"),
+  country: text("country"),
+  source: text("source"),
+  need: text("need"),
+  stage: clientStage("stage").notNull().default("NEW"),
+  nextStep: text("next_step"),
+  nextDate: timestamp("next_date", { withTimezone: true }),
+  createdAt: created(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export const clientEvents = pgTable("client_events", {
+  id: id(),
+  clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  stage: clientStage("stage"),
+  note: text("note"),
+  by: text("by_user"),
   createdAt: created(),
 });

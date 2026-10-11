@@ -3,7 +3,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq, isNull, inArray } from "drizzle-orm";
-import { db, projects, projectPayments, projectCosts, projectRoles, roleMembers, deductions, bans, users, suppliers } from "@/lib/db";
+import { db, projects, projectPayments, projectCosts, projectRoles, roleMembers, deductions, bans, users, suppliers, clients, clientEvents } from "@/lib/db";
 import { requireAdmin, requireUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { getSettings } from "@/lib/settings";
@@ -22,15 +22,21 @@ async function rateFor(currency: string) {
 export async function createProject(_: R, fd: FormData): Promise<R> {
   const admin = await requireAdmin();
   const p = z.object({
-    name: z.string().trim().min(2, "اكتب اسم المشروع").max(120), client: z.string().trim().min(2, "اكتب اسم العميل").max(120),
+    name: z.string().trim().min(2, "اكتب اسم المشروع").max(120), client: z.string().trim().min(2, "اختر العميل أو اكتب اسمه").max(120),
     currency: z.enum(["EGP", "SAR", "USD"]), price: money, size: z.enum(["SMALL", "MEDIUM", "LARGE"]),
     status: z.enum(["MEETING", "BRIEF", "APPROVED", "IN_PROGRESS"]), startDate: date, dueDate: date, description: z.string().max(4000).optional(),
-  }).safeParse({ name: f(fd, "name"), client: f(fd, "client"), currency: f(fd, "currency"), price: f(fd, "price"), size: f(fd, "size"), status: f(fd, "status"), startDate: f(fd, "startDate"), dueDate: f(fd, "dueDate"), description: f(fd, "description") });
+  }).safeParse({ name: f(fd, "name"), client: f(fd, "client") || (f(fd, "clientId") ? (await db.query.clients.findFirst({ where: eq(clients.id, f(fd, "clientId")!) }))?.name : undefined), currency: f(fd, "currency"), price: f(fd, "price"), size: f(fd, "size"), status: f(fd, "status"), startDate: f(fd, "startDate"), dueDate: f(fd, "dueDate"), description: f(fd, "description") });
   if (!p.success) return { error: p.error.issues[0].message };
+  const clientId = f(fd, "clientId");
+  const cl = clientId ? await db.query.clients.findFirst({ where: eq(clients.id, clientId) }) : null;
   const s = await getSettings();
-  const [row] = await db.insert(projects).values({ ...p.data, rate: await rateFor(p.data.currency), fundPct: Number(s.fundPct), ownerPct: Number(s.ownerPct), teamCapPct: Number(s.teamCapPct) }).returning();
+  const [row] = await db.insert(projects).values({ ...p.data, clientId: cl?.id ?? null, rate: await rateFor(p.data.currency), fundPct: Number(s.fundPct), ownerPct: Number(s.ownerPct), teamCapPct: Number(s.teamCapPct) }).returning();
   // "Banned from the next project": every open ban is consumed by this new project.
   await db.update(bans).set({ consumedByProject: row.id }).where(isNull(bans.consumedByProject));
+  if (cl && !["ACTIVE", "DONE"].includes(cl.stage)) {
+    await db.update(clients).set({ stage: "ACTIVE", updatedAt: new Date() }).where(eq(clients.id, cl.id));
+    await db.insert(clientEvents).values({ clientId: cl.id, stage: "ACTIVE", note: `بدأ مشروع: ${row.name}`, by: admin.id });
+  }
   await audit(admin.id, "project_create", row.name);
   redirect(`/projects/${row.id}`);
 }

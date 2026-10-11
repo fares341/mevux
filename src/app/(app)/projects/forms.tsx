@@ -7,12 +7,14 @@ export function Msg({ s }: { s: R }) {
 }
 const d = (x?: Date | string | null) => (x ? new Date(x).toISOString().slice(0, 10) : "");
 
-export function NewProject() {
+export function NewProject({ clients = [], clientId }: { clients?: { id: string; name: string }[]; clientId?: string }) {
   const [s, a, p] = useActionState(createProject, {});
+  const [cid, setCid] = useState(clientId || "");
   return (<form action={a}><Msg s={s} />
     <div className="row">
       <label>اسم المشروع<input id="np-name" name="name" required /></label>
-      <label>العميل<input id="np-client" name="client" required /></label>
+      <label>العميل<select id="np-clientId" name="clientId" value={cid} onChange={(e) => setCid(e.target.value)}><option value="">— عميل مش متسجل —</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+      {!cid && <label>اسم العميل<input id="np-client" name="client" required /></label>}
       <label>الحجم<select id="np-size" name="size" defaultValue="MEDIUM"><option value="SMALL">صغير</option><option value="MEDIUM">متوسط</option><option value="LARGE">كبير</option></select></label>
     </div>
     <div className="row">
