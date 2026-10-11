@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";
+import { visibleProjectIds } from "@/lib/work";
 import { db, users, suppliers, bans, clients } from "@/lib/db";
 import { loadProject, loadTeamView, calc, rules, STATUS, SIZE, DED, ACTIVE } from "@/lib/projects";
 import { egp } from "@/lib/finance";
@@ -36,7 +37,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   if (me.role !== "ADMIN") {
     const p = (await loadTeamView(false)).find((x) => x.id === id);
     const mine = p?.roles.some((r) => r.members.some((m) => m.userId === me.id));
-    if (!p || (!(ACTIVE as readonly string[]).includes(p.status) && !mine)) notFound();
+    if (!p || !(await visibleProjectIds(me)).has(p.id)) notFound();
     const files = mine ? await loadFiles(p.id) : [];
     return (<>
       <PageHead title={p.name} crumbs={[{ href: "/projects", label: "المشاريع" }]} badge={<span className="pill info">{STATUS[p.status]}</span>}

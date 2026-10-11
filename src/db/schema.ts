@@ -334,6 +334,9 @@ export const projectMessages = pgTable("project_messages", {
   storedName: text("stored_name"),
   fileSize: integer("file_size"),
   mime: text("mime"),
+  isVoice: boolean("is_voice").notNull().default(false),
+  replyToId: text("reply_to_id"), // message being replied to (same project)
+  deletedAt: timestamp("deleted_at", { withTimezone: true }), // "this message was deleted"
   createdAt: created(),
 });
 export const chatReads = pgTable("chat_reads", {
@@ -382,4 +385,17 @@ export const ideas = pgTable("ideas", {
   createdBy: text("created_by"),
   createdAt: created(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Evidence attached to a complaint (images, files, voice notes). Visible to the admin and the uploader only.
+export const complaintFiles = pgTable("complaint_files", {
+  id: id(),
+  complaintId: text("complaint_id").notNull().references(() => complaints.id, { onDelete: "cascade" }),
+  uploadedBy: text("uploaded_by").notNull().references(() => users.id),
+  originalName: text("original_name").notNull(),
+  storedName: text("stored_name").notNull().unique(),
+  size: integer("size").notNull(),
+  mime: text("mime").notNull(),
+  isVoice: boolean("is_voice").notNull().default(false),
+  createdAt: created(),
 });

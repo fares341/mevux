@@ -34,11 +34,11 @@ const str = (d: string) => ({ type: "string", description: d });
 export function toolsFor(u: SessionUser): ToolDef[] {
   const t: ToolDef[] = [
     fn("my_work", "My roles, progress, deadlines and open tasks."),
-    fn("projects_overview", "Active projects: who holds which role and their progress. No money."),
+    fn("projects_overview", "Projects I can see (the ones I work on): who holds which role and their progress. No money."),
     fn("project_status", "Roles, people, progress and open tasks of one project.", { project: str("project name") }, ["project"]),
     fn("log_update", "Save my daily progress update. Attaches any files the user sent in this message to my role in that project.", { project: str("project name, or empty for a general note"), text: str("the update in the user's words"), progress_percent: { type: "number", description: "optional new progress % for my role in that project" }, mark_delivered: { type: "boolean", description: "true only if the user said they finished and delivered their role" } }, ["text"]),
     fn("update_task", "Change the status of one of my tasks.", { task: str("task title"), status: { type: "string", enum: Object.keys(W.TASK_ST) } }, ["task", "status"]),
-    fn("file_complaint", "File a complaint about another person's work in a project I am in. The reporter's name is hidden from them.", { project: str("project name"), against: str("person's name"), text: str("the problem in detail"), evidence: str("evidence if any") }, ["project", "against", "text"]),
+    fn("file_complaint", "File a complaint about another person's work in a project I am in. Any files/images sent in this message are attached as evidence (admin only). The reporter's name is hidden from them.", { project: str("project name"), against: str("person's name"), text: str("the problem in detail"), evidence: str("evidence if any") }, ["project", "against", "text"]),
     fn("my_complaints", "Complaints about me or filed by me."),
     fn("my_money", "MY OWN earnings, deductions and payouts only."),
   ];
@@ -77,7 +77,8 @@ export async function runTool(name: string, args: Record<string, unknown>, ctx: 
       return { roles: mine.filter((r) => r.projectStatus !== STATUS.CLOSED), openTasks: tasks };
     }
     case "projects_overview": {
-      return (await loadTeamView(true)).map((p) => ({ project: p.name, client: p.client, status: STATUS[p.status], due: day(p.dueDate), roles: p.roles.map((r) => ({ role: r.title, people: r.members.map((m) => m.name), progress: r.progress, due: day(r.dueDate), delivered: !!r.deliveredAt })) }));
+      const ok = await W.visibleProjectIds(u);
+      return (await loadTeamView(false)).filter((p) => ok.has(p.id) && p.status !== "CLOSED").map((p) => ({ project: p.name, client: p.client, status: STATUS[p.status], due: day(p.dueDate), roles: p.roles.map((r) => ({ role: r.title, people: r.members.map((m) => m.name), progress: r.progress, due: day(r.dueDate), delivered: !!r.deliveredAt })) }));
     }
     case "project_status": {
       const p = pick(await vis(), a("project"), "مشروع");
@@ -116,8 +117,10 @@ export async function runTool(name: string, args: Record<string, unknown>, ctx: 
       const p = pick(await vis(), a("project"), "مشروع");
       const people = await db.selectDistinct({ id: users.id, name: users.name }).from(roleMembers).innerJoin(projectRoles, eq(roleMembers.roleId, projectRoles.id)).innerJoin(users, eq(roleMembers.userId, users.id)).where(eq(projectRoles.projectId, p.id));
       const who = pick(people, a("against"), "شخص في المشروع");
-      await W.fileComplaint(u, { projectId: p.id, againstId: who.id, text: a("text"), evidence: a("evidence") || undefined });
-      return { filed: true, against: who.name, project: p.name, note: "الشكوى وصلت للمدير، واسمك مش هيظهر للشخص." };
+      const ev = ctx.files.filter((f) => !f.used);
+      await W.fileComplaint(u, { projectId: p.id, againstId: who.id, text: a("text"), evidence: a("evidence") || undefined, files: ev.map((f) => ({ stored: f.stored, name: f.name, size: f.size, mime: f.mime })) });
+      ev.forEach((f) => (f.used = true));
+      return { filed: true, against: who.name, project: p.name, attachments: ev.map((f) => f.name), note: "الشكوى وصلت للمدير ومعاها المرفقات، واسمك مش هيظهر للشخص." };
     }
     case "my_complaints": {
       return (await W.listComplaints({ ...u, role: "MEMBER" })).map((c) => ({ project: c.project, against: c.mine ? c.against : "إنت", text: c.text, status: W.COMPLAINT_ST[c.status], yourResponse: c.againstId === u.id ? c.response : undefined }));

@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { loadProjects, loadTeamView, calc, rules, STATUS, SIZE } from "@/lib/projects";
 import { egp } from "@/lib/finance";
 import { NewProject } from "./forms";
+import { visibleProjectIds } from "@/lib/work";
 
 const pill = (s: string) => ({ CLOSED: "ok", CANCELLED: "bad", DELIVERED: "info", IN_PROGRESS: "warn", APPROVED: "warn" } as Record<string, string>)[s] || "info";
 const fmt = (d: Date | null) => (d ? d.toLocaleDateString("ar-EG", { day: "numeric", month: "short" }) : "—");
@@ -32,9 +33,11 @@ export default async function Projects({ searchParams }: { searchParams: Promise
   // Admin lands on everything, so a finished (imported) project is never out of sight.
   const tab = sp.tab || (me.role === "ADMIN" ? "all" : "active");
   if (me.role !== "ADMIN") {
-    const all = await loadTeamView(false);
-    const mineDone = all.filter((p) => p.status === "CLOSED" && p.roles.some((r) => r.members.some((m) => m.userId === me.id)));
-    const activeList = all.filter((p) => (GROUPS.active.st as readonly string[]).includes(p.status));
+    const vis = await visibleProjectIds(me);
+    const all = (await loadTeamView(false)).filter((p) => vis.has(p.id)); // never list a project this person is not allowed to see
+    const isMine = (p: (typeof all)[number]) => p.roles.some((r) => r.members.some((m) => m.userId === me.id));
+    const mineDone = all.filter((p) => p.status === "CLOSED" && isMine(p));
+    const activeList = all.filter((p) => p.status !== "CLOSED");
     const ps = tab === "done" ? mineDone : activeList;
     return (<>
       <div className="head"><div><span className="tag">العمل</span><h1>المشاريع</h1><p className="sub">مين ماسك أنهي دور في كل مشروع، وكل واحد وصل لفين.</p></div></div>

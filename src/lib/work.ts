@@ -1,6 +1,6 @@
 import "server-only";
 import { and, desc, eq, gte, inArray, ne, or } from "drizzle-orm";
-import { db, users, projects, projectRoles, roleMembers, tasks, updates, complaints, deductions } from "./db";
+import { db, users, projects, projectRoles, roleMembers, tasks, updates, complaints, deductions, complaintFiles } from "./db";
 import type { SessionUser } from "./auth";
 import { audit } from "./audit";
 import { getSettings } from "./settings";
@@ -21,13 +21,20 @@ export async function myProjectIds(userId: string): Promise<string[]> {
   return r.map((x) => x.id);
 }
 
-/** Projects this person may see (names and progress only). */
+/**
+ * Projects this person may see (names and progress only).
+ * - Admin: everything.
+ * - Member: ONLY projects they hold a role in. Nothing else, whatever its status.
+ * - Team lead: their own projects + projects currently being built (to follow up), never finished ones.
+ */
+export const LEAD_SCOPE = ["APPROVED", "IN_PROGRESS"] as const;
 export async function visibleProjects(u: SessionUser) {
   const rows = await db.select({ id: projects.id, name: projects.name, client: projects.client, status: projects.status, dueDate: projects.dueDate }).from(projects).where(ne(projects.status, "CANCELLED")).orderBy(desc(projects.createdAt));
   if (u.role === "ADMIN") return rows;
   const mine = new Set(await myProjectIds(u.id));
-  return rows.filter((p) => (ACTIVE_ST as readonly string[]).includes(p.status) || mine.has(p.id));
+  return rows.filter((p) => mine.has(p.id) || (u.role === "TEAM_LEAD" && (LEAD_SCOPE as readonly string[]).includes(p.status)));
 }
+export async function visibleProjectIds(u: SessionUser) { return new Set((await visibleProjects(u)).map((p) => p.id)); }
 
 async function canSeeProject(u: SessionUser, projectId: string) {
   return (await visibleProjects(u)).some((p) => p.id === projectId);
@@ -96,7 +103,7 @@ export async function feed(u: SessionUser, opts: { userId?: string; projectId?: 
 export async function followUp(u: SessionUser) {
   if (!isLead(u)) throw new Error("المتابعة للمدير والتيم ليد بس.");
   const now = new Date();
-  const active = await db.select({ id: projects.id, name: projects.name }).from(projects).where(inArray(projects.status, [...ACTIVE_ST]));
+  const active = await db.select({ id: projects.id, name: projects.name }).from(projects).where(inArray(projects.status, u.role === "ADMIN" ? [...ACTIVE_ST] : [...LEAD_SCOPE]));
   const ids = active.map((p) => p.id);
   const roles = ids.length ? await db.select({ r: projectRoles, userId: roleMembers.userId, name: users.name }).from(projectRoles)
     .innerJoin(roleMembers, eq(roleMembers.roleId, projectRoles.id)).innerJoin(users, eq(roleMembers.userId, users.id)).where(inArray(projectRoles.projectId, ids)) : [];
@@ -118,21 +125,23 @@ export async function personStatus(u: SessionUser, personId: string) {
   if (!p) throw new Error("الشخص غير موجود.");
   const roles = await db.select({ title: projectRoles.title, progress: projectRoles.progress, dueDate: projectRoles.dueDate, deliveredAt: projectRoles.deliveredAt, project: projects.name, status: projects.status })
     .from(roleMembers).innerJoin(projectRoles, eq(roleMembers.roleId, projectRoles.id)).innerJoin(projects, eq(projectRoles.projectId, projects.id))
-    .where(and(eq(roleMembers.userId, personId), inArray(projects.status, [...ACTIVE_ST])));
+    .where(and(eq(roleMembers.userId, personId), inArray(projects.status, u.role === "ADMIN" ? [...ACTIVE_ST] : [...LEAD_SCOPE])));
   const t = (await listTasks(u, { open: true })).filter((x) => x.assigneeId === personId);
   const last = await feed(u, { userId: personId, limit: 5 });
   return { name: p.name, roles, tasks: t, lastUpdates: last };
 }
 
 // ---------- complaints ----------
-export async function fileComplaint(u: SessionUser, d: { projectId: string; againstId: string; text: string; evidence?: string }) {
+export type EvidenceFile = { stored: string; name: string; size: number; mime: string; isVoice?: boolean };
+export async function fileComplaint(u: SessionUser, d: { projectId: string; againstId: string; text: string; evidence?: string; files?: EvidenceFile[] }) {
   if (d.againstId === u.id) throw new Error("مينفعش تشتكي على نفسك.");
   const members = await membersOf(d.projectId);
   if (u.role !== "ADMIN" && !members.some((m) => m.id === u.id)) throw new Error("لازم تكون في المشروع عشان تقدّم شكوى عليه.");
   if (!members.some((m) => m.id === d.againstId)) throw new Error("الشخص ده مش في المشروع.");
   if (d.text.trim().length < 5) throw new Error("اكتب الشكوى بالتفصيل.");
   const [c] = await db.insert(complaints).values({ projectId: d.projectId, reporterId: u.id, againstId: d.againstId, text: d.text.trim().slice(0, 4000), evidence: d.evidence?.slice(0, 4000) }).returning();
-  await audit(u.id, "complaint_file", c.id);
+  if (d.files?.length) await db.insert(complaintFiles).values(d.files.map((f) => ({ complaintId: c.id, uploadedBy: u.id, originalName: f.name, storedName: f.stored, size: f.size, mime: f.mime, isVoice: !!f.isVoice })));
+  await audit(u.id, "complaint_file", `${c.id} files:${d.files?.length ?? 0}`);
   return c;
 }
 
@@ -150,7 +159,13 @@ export async function listComplaints(u: SessionUser, opts: { open?: boolean } = 
   const where = isLead(u) ? undefined : or(eq(complaints.againstId, u.id), eq(complaints.reporterId, u.id));
   const rows = await base.where(where).orderBy(desc(complaints.createdAt));
   const reporters = u.role === "ADMIN" ? await db.select({ id: users.id, name: users.name }).from(users) : [];
+  // Evidence files: the admin sees all; a reporter sees only what they uploaded. The accused never sees them
+  // (a screenshot or voice could reveal who complained).
+  const ids = rows.map((r) => r.c.id);
+  const files = ids.length ? await db.select({ id: complaintFiles.id, complaintId: complaintFiles.complaintId, name: complaintFiles.originalName, mime: complaintFiles.mime, size: complaintFiles.size, isVoice: complaintFiles.isVoice, uploadedBy: complaintFiles.uploadedBy }).from(complaintFiles).where(inArray(complaintFiles.complaintId, ids)) : [];
+  const filesFor = (cid: string) => files.filter((f) => f.complaintId === cid && (u.role === "ADMIN" || f.uploadedBy === u.id)).map(({ uploadedBy: _u, ...f }) => f);
   return rows.filter((r) => !opts.open || ["OPEN", "ANSWERED"].includes(r.c.status)).map((r) => ({
+    files: filesFor(r.c.id),
     id: r.c.id, projectId: r.c.projectId, project: r.project, againstId: r.c.againstId, against: r.against,
     text: r.c.text, evidence: r.c.evidence, response: r.c.response, status: r.c.status, decisionNote: r.c.decisionNote, createdAt: r.c.createdAt,
     mine: r.c.reporterId === u.id,

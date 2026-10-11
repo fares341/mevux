@@ -18,8 +18,8 @@ export default async function Complaints() {
   const mem = ids.length ? await db.selectDistinct({ projectId: projectRoles.projectId, id: users.id, name: users.name }).from(roleMembers).innerJoin(projectRoles, eq(roleMembers.roleId, projectRoles.id)).innerJoin(users, eq(roleMembers.userId, users.id)).where(inArray(projectRoles.projectId, ids)) : [];
   const forms = canFileOn.map((p) => ({ id: p.id, name: p.name, members: mem.filter((m) => m.projectId === p.id && m.id !== u.id).map((m) => ({ id: m.id, name: m.name })) })).filter((p) => p.members.length);
   return (<>
-    <div className="head"><div><span className="tag">العمل</span><h1>الشكاوى</h1><p className="sub">مشكلة في شغل حد في مشروع؟ سجّلها بالدليل. اسم اللي اشتكى بيظهر للمدير بس.</p></div></div>
-    {forms.length > 0 && <div className="card"><details><summary>شكوى جديدة</summary><div style={{ marginTop: 12 }}><ComplaintForm projects={forms} /></div></details></div>}
+    <div className="head"><div><span className="tag">العمل</span><h1>الشكاوى</h1><p className="sub">مشكلة في شغل حد في مشروع؟ سجّلها بالدليل. تقدر ترفق صور وملفات وفويس نوت. اسم اللي اشتكى والمرفقات بيظهروا للمدير بس.</p></div></div>
+    {forms.length > 0 && <div className="card"><h2>شكوى جديدة</h2><ComplaintForm projects={forms} /></div>}
     {list.length ? list.map((c) => (
       <section key={c.id} className="card" style={{ borderTopColor: c.status === "OPEN" ? "var(--warn)" : undefined }}>
         <div className="actions" style={{ justifyContent: "space-between" }}>
@@ -29,6 +29,17 @@ export default async function Complaints() {
         {admin && <p className="sub">من: {c.reporter}</p>}{!admin && c.mine && <p className="sub">إنت اللي قدّمتها</p>}
         <p style={{ whiteSpace: "pre-wrap" }}>{c.text}</p>
         {c.evidence && <p className="sub" style={{ whiteSpace: "pre-wrap" }}>الدليل: {c.evidence}</p>}
+        {c.files.length > 0 && <div className="ev-files">
+          <b>المرفقات ({c.files.length}){!admin && " · بتظهر ليك وللمدير بس"}</b>
+          <div className="ev-grid">{c.files.map((f) => {
+            const src = `/api/complaint-files/${f.id}`;
+            const mime = f.mime.split(";")[0];
+            if (mime.startsWith("image/")) return <a key={f.id} href={src} target="_blank" rel="noopener" className="ev-img"><img src={src} alt={f.name} loading="lazy" /></a>;
+            if (mime.startsWith("audio/") || f.isVoice) return <div key={f.id} className="ev-audio"><small>{f.isVoice ? "فويس نوت" : f.name}</small><audio controls preload="none" src={src} /></div>;
+            if (mime.startsWith("video/")) return <video key={f.id} controls preload="none" src={src} className="ev-video" />;
+            return <a key={f.id} href={src} target="_blank" rel="noopener" className="ev-file">{f.name}<small>{Math.max(1, Math.round(f.size / 1024))} ك.ب</small></a>;
+          })}</div>
+        </div>}
         {c.response ? <div className="note"><b>رد {c.against}: </b>{c.response}</div> : c.againstId === u.id && ["OPEN", "ANSWERED"].includes(c.status) ? <RespondComplaint id={c.id} /> : <p className="sub">لسه مافيش رد.</p>}
         {c.decisionNote && <p className="sub">قرار المدير: {c.decisionNote}</p>}
         {admin && ["OPEN", "ANSWERED"].includes(c.status) && <form action={decideComplaintAction} style={{ marginTop: 10 }}><input type="hidden" name="id" value={c.id} />

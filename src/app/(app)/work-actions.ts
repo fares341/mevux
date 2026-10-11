@@ -2,6 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import * as W from "@/lib/work";
+import { checkFile, saveFile, removeStored } from "@/lib/storage";
 
 type R = { ok?: string; error?: string };
 const run = async (fn: () => Promise<unknown>, ok: string, paths: string[]): Promise<R> => {
@@ -26,7 +27,19 @@ export async function addUpdateAction(_: R, fd: FormData) {
 }
 export async function fileComplaintAction(_: R, fd: FormData) {
   const u = await requireUser();
-  return run(() => W.fileComplaint(u, { projectId: s(fd, "projectId"), againstId: s(fd, "againstId"), text: s(fd, "text"), evidence: s(fd, "evidence") || undefined }), "اتبعتت الشكوى للمدير. اسمك مش هيظهر للشخص.", ["/complaints"]);
+  // Up to 6 evidence files (images, docs, video) + one optional recorded voice note.
+  const files = fd.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+  const voice = fd.get("voice");
+  const all = [...files.map((f) => ({ f, isVoice: false })), ...(voice instanceof File && voice.size > 0 ? [{ f: voice, isVoice: true }] : [])];
+  if (files.length > 6) return { error: "أقصى حاجة 6 ملفات في الشكوى." };
+  if (all.reduce((a, x) => a + x.f.size, 0) > 50 * 1024 * 1024) return { error: "مجموع المرفقات أكبر من 50 ميجا." };
+  for (const { f } of all) { const err = checkFile(f); if (err) return { error: `${f.name}: ${err}` }; }
+  const saved: W.EvidenceFile[] = [];
+  for (const { f, isVoice } of all) saved.push({ ...(await saveFile(f)), isVoice });
+  const r = await run(() => W.fileComplaint(u, { projectId: s(fd, "projectId"), againstId: s(fd, "againstId"), text: s(fd, "text"), evidence: s(fd, "evidence") || undefined, files: saved }),
+    `اتبعتت الشكوى للمدير${saved.length ? ` ومعاها ${saved.length} مرفق` : ""}. اسمك مش هيظهر للشخص.`, ["/complaints"]);
+  if (r.error) for (const f of saved) await removeStored(f.stored);
+  return r;
 }
 export async function respondComplaintAction(_: R, fd: FormData) {
   const u = await requireUser();
