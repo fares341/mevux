@@ -18,6 +18,7 @@ import { saveSupplier } from "@/app/(app)/suppliers/actions";
 import { addPayout } from "@/app/(app)/finance/actions";
 import { createMember } from "@/app/(app)/team/actions";
 import { randomBytes } from "crypto";
+import { MORE_TOOLS, runMoreTool } from "./admin-tools-more";
 import { revalidatePath } from "next/cache";
 
 // Admin-only actions for the assistant. Each one reuses the same server actions the pages use,
@@ -67,7 +68,7 @@ export const ADMIN_TOOLS: ToolDef[] = [
   fn("attach_files", "Store the files sent in this message on a project (final files) or in a client's file.", { target: E(["project", "client"], "where"), name: S("project or client name"), kind: E(["FINAL", "BRIEF", "CONTRACT", "OTHER"], "file type") }, ["target", "name"]),
   fn("record_expense", "Record a company expense (EGP) such as ads, tools, salaries.", { name: S("what"), amount_egp: N("EGP"), category: E(["ADS", "TOOLS", "SALARIES", "OTHER"], "category"), date: S("YYYY-MM-DD, default today"), note: S("note") }, ["name", "amount_egp"]),
   fn("update_project", "Edit any project (also finished ones): link it to a client, change contract, subscription fee, next payment date and reminder, work types, dates, price, status or description. Only send fields to change.", {
-    project: S("project name"), client: S("link to this existing client"), billing: E(["ONE_TIME", "SUBSCRIPTION"], "contract type"), monthly_fee: N("monthly subscription"),
+    project: S("project name"), new_name: S("rename the project"), currency: CUR, client: S("link to this existing client"), billing: E(["ONE_TIME", "SUBSCRIPTION"], "contract type"), monthly_fee: N("monthly subscription"),
     next_due_date: S("next subscription payment date YYYY-MM-DD"), reminder_days: N("days before the due date to alert"),
     kinds: { type: "array", items: { type: "string", enum: ["AUTOMATION", "CHATBOT", "WEBSITE", "APP", "SAAS", "DASHBOARD"] }, description: "work types" },
     price: N("price"), start_date: S("YYYY-MM-DD"), due_date: S("YYYY-MM-DD"), status: E(Object.keys(STATUS), "status"), description: S("description"),
@@ -77,6 +78,7 @@ export const ADMIN_TOOLS: ToolDef[] = [
     cost: N("cost"), currency: CUR, billing: E(["MONTHLY", "YEARLY", "ONE_TIME"], "billing"), paid_by: E(["CLIENT", "US", "INCLUDED"], "who pays"), renews_at: S("renewal date YYYY-MM-DD"), in_brief: { type: "boolean", description: "show in the brief (default true)" },
   }, ["project", "kind", "name"]),
   fn("subscriptions_due", "Subscriptions whose payment is due soon or overdue.", {}),
+  ...MORE_TOOLS,
   fn("generate_brief", "Generate a client brief PDF for a project. Takes about a minute.", { project: S("project name"), lang: E(["ar", "en"], "language"), context: S("everything known about the client and the need") }, ["project"]),
 ];
 
@@ -350,6 +352,8 @@ export async function runAdminTool(name: string, a: Record<string, unknown>, u: 
       const p = pick(await allProjects(), s("project")!, "مشروع");
       const set: Partial<typeof projects.$inferInsert> = {};
       if (s("client")) { const c = pick(await allClients(), s("client")!, "عميل"); set.clientId = c.id; set.client = c.name; }
+      if (s("new_name")) set.name = s("new_name");
+      if (s("currency") && s("currency") !== p.currency) { const st = await getSettings(); set.currency = s("currency"); set.rate = s("currency") === "SAR" ? Number(st.rateSAR) : s("currency") === "USD" ? Number(st.rateUSD) : 1; }
       if (s("billing")) set.billing = s("billing");
       if (n("monthly_fee") !== undefined) set.monthlyFee = n("monthly_fee");
       if (s("next_due_date")) set.nextDueDate = new Date(s("next_due_date")!);
@@ -382,5 +386,6 @@ export async function runAdminTool(name: string, a: Record<string, unknown>, u: 
       return { project: p.name, result: r.ok, link: `/api/briefs/${r.id}` };
     }
   }
+  if (MORE_TOOLS.some((t) => t.function.name === name)) return runMoreTool(name, a, u);
   return { error: "أداة غير معروفة." };
 }

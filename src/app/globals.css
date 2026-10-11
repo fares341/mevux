@@ -298,3 +298,5 @@ details[open] > summary::before { content: "–"; }
 .idea-st { display: flex; flex-wrap: wrap; gap: 6px; }
 .idea-st button.sm { padding: 4px 10px; font-size: 13px; }
 .idea-st button.on { background: var(--navy); color: #fff; }
+.card.danger-zone { border-color: var(--bad-bg); }
+.card.danger-zone h2 { color: var(--bad); }

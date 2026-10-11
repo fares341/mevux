@@ -26,7 +26,7 @@ function Tabs({ tab, counts, admin }: { tab: string; counts: Record<string, numb
   </div>);
 }
 
-export default async function Projects({ searchParams }: { searchParams: Promise<{ tab?: string; client?: string }> }) {
+export default async function Projects({ searchParams }: { searchParams: Promise<{ tab?: string; client?: string; deleted?: string }> }) {
   const me = await requireUser();
   const sp = await searchParams;
   // Admin lands on everything, so a finished (imported) project is never out of sight.
@@ -55,6 +55,7 @@ export default async function Projects({ searchParams }: { searchParams: Promise
   const ps = tab === "new" ? [] : all.filter((p) => (g.st as readonly string[]).includes(p.status));
   return (<>
     <div className="head"><div><span className="tag">العمل</span><h1>المشاريع</h1><p className="sub">الأرقام بالجنيه.</p></div></div>
+    {sp.deleted && <div className="msg ok">اتمسح مشروع «{sp.deleted}».</div>}
     <Tabs tab={tab} admin counts={counts} />
     {tab === "new" && <div className="card"><h2>مشروع جديد</h2><NewProject clients={await db.select({ id: clients.id, name: clients.name }).from(clients).orderBy(asc(clients.name))} clientId={sp.client} /></div>}
     {tab !== "new" && !ps.length && <div className="note">مفيش مشاريع في "{g.label}". {g.hint && `(${g.hint})`}</div>}

@@ -3,7 +3,8 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq, isNull, inArray } from "drizzle-orm";
-import { db, projects, projectPayments, projectCosts, projectRoles, roleMembers, deductions, bans, users, suppliers, clients, clientEvents } from "@/lib/db";
+import { db, projects, projectPayments, projectCosts, projectRoles, roleMembers, deductions, bans, users, suppliers, clients, clientEvents, projectFiles, payouts } from "@/lib/db";
+import { removeStored } from "@/lib/storage";
 import { requireAdmin, requireUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { getSettings } from "@/lib/settings";
@@ -69,14 +70,19 @@ export async function updateProject(_: R, fd: FormData): Promise<R> {
   return { ok: "تم حفظ المشروع." };
 }
 
-export async function deleteProject(fd: FormData) {
+export async function deleteProject(_: R, fd: FormData): Promise<R> {
   const admin = await requireAdmin();
   const id = String(fd.get("id"));
-  if (fd.get("confirm") !== "حذف") return;
-  await db.delete(projects).where(eq(projects.id, id));
-  await audit(admin.id, "project_delete", id);
-  revalidatePath("/projects");
-  redirect("/projects");
+  const p = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  if (!p) return { error: "المشروع مش موجود." };
+  if (String(fd.get("confirm") ?? "").trim() !== "حذف") return { error: 'اكتب كلمة "حذف" في الخانة عشان نتأكد.' };
+  const files = await db.select({ s: projectFiles.storedName }).from(projectFiles).where(eq(projectFiles.projectId, id));
+  await db.delete(payouts).where(eq(payouts.projectId, id)); // payouts on a mistaken project are mistakes too
+  await db.delete(projects).where(eq(projects.id, id)); // roles, payments, costs, files, tasks, chat, briefs cascade
+  for (const f of files) await removeStored(f.s).catch(() => {});
+  await audit(admin.id, "project_delete", `${p.name} (${id})`);
+  revalidatePath("/projects"); revalidatePath("/finance"); revalidatePath("/clients"); revalidatePath("/");
+  redirect("/projects?deleted=" + encodeURIComponent(p.name));
 }
 
 export async function addPayment(_: R, fd: FormData): Promise<R> {

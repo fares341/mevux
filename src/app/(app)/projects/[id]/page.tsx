@@ -6,8 +6,8 @@ import { db, users, suppliers, bans, clients } from "@/lib/db";
 import { loadProject, loadTeamView, calc, rules, STATUS, SIZE, DED, ACTIVE } from "@/lib/projects";
 import { egp } from "@/lib/finance";
 import { BILLING } from "@/lib/labels";
-import { removeRow, setDelivered, updateProgress, decideDeduction, deleteProject } from "../actions";
-import { EditProject, PaymentForm, CostForm, RoleForm, DeductionForm } from "../forms";
+import { removeRow, setDelivered, updateProgress, decideDeduction } from "../actions";
+import { EditProject, PaymentForm, CostForm, RoleForm, DeductionForm, DeleteProject } from "../forms";
 import { RoleUpload } from "../files-ui";
 import { ProjectAssets } from "../assets";
 import { KINDS } from "@/lib/labels";
@@ -78,7 +78,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     <PageHead title={p.name} crumbs={[{ href: "/projects", label: "المشاريع" }, ...(p.clientId ? [{ href: `/clients/${p.clientId}`, label: p.client }] : [])]}
       badge={<span className={"pill " + (p.status === "CLOSED" ? "ok" : p.status === "CANCELLED" ? "bad" : "info")}>{STATUS[p.status]}</span>}
       help={<>{p.client} · <span className="num">{egp(p.price)}</span> {CUR[p.currency]}{p.billing === "SUBSCRIPTION" && <> · اشتراك <span className="num">{egp(p.monthlyFee ?? 0)}</span> {CUR[p.currency]} / شهر</>}{p.kinds && <> · {p.kinds.split(",").map((k) => KINDS[k as keyof typeof KINDS]).join("، ")}</>}</>}
-      actions={[{ href: `/chats/${p.id}`, label: "شات المشروع", icon: "chat", kind: "secondary" }, { href: `/briefs?project=${p.id}`, label: "عمل بريف", icon: "doc", kind: "accent" }]} />
+      actions={[{ href: `/chats/${p.id}`, label: "شات المشروع", icon: "chat", kind: "secondary" }, { href: `/briefs?project=${p.id}`, label: "عمل بريف", icon: "doc", kind: "accent" }, { href: `/projects/${p.id}?tab=details#delete`, label: "حذف", kind: "secondary" }]} />
     <Tabs base={`/projects/${p.id}`} current={tab} tabs={[
       { key: "overview", label: "نظرة عامة" },
       { key: "team", label: "الفريق والأدوار", count: p.roles.length, alert: allDeds.some((d) => d.status === "PENDING") },
@@ -202,7 +202,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     </>}
     {tab === "details" && <>
     <section className="card"><details open><summary>بيانات المشروع ومرحلته</summary><div style={{ marginTop: 12 }}><EditProject p={p} clients={allClients} /></div></details></section>
-    <form action={deleteProject} className="actions"><input type="hidden" name="id" value={p.id} /><input id="del-project" name="confirm" placeholder='اكتب "حذف" لحذف المشروع' style={{ maxWidth: 220 }} /><button className="sm danger">حذف المشروع</button></form>
+    <section className="card danger-zone" id="delete"><h2>حذف المشروع</h2><DeleteProject id={p.id} name={p.name} /></section>
     </>}
   </>);
 }

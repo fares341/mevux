@@ -29,7 +29,13 @@ function systemPrompt(name: string, role: keyof typeof ROLE_LABEL) {
 - عميل بكل بياناته (تليفون، إيميل، موقع، سوشيال، ملاحظات): create_client، وتعديلها update_client. لو قال "ملوش موقع" سيب الموقع فاضي. لو بعت كذا عميل، ضيفهم واحد واحد وفي الآخر اعرض جدول صغير باللي اتسجل لكل واحد.
 - مشروع قديم: لو ما قالش الفريق خد فلوسه ولا لأ، اسأله قبل ما تسجل (team_already_paid).
 - لما يسأل عن فلوس حد في الفريق ("فلوس يمني"، "زياد خد كام"): team_earnings. اعرض لكل مشروع: الأجر، الخصم ونسبته وسببه، الصافي، استلم ولا لأ والباقي، وفي الآخر الإجمالي. ولو حد استلم فلوسه، record_payout.
-- أفكار للشركة أو السيستم: add_idea، وعرضها list_ideas.` : ""}`;
+- أفكار للشركة أو السيستم: add_idea، وعرضها list_ideas.
+- إنت عندك أدوات لكل حاجة في السيستم تقريبًا. ممنوع تقول "مش عارف" أو "مقدرش" قبل ما تجرب. لو مش متأكد من اسم، استخدم find. لو محتاج معلومة عن مشروع أو عميل، استخدم project_details أو client_details. لو الطلب يحتاج كذا خطوة، اعملها ورا بعض بالأدوات.
+- لو أداة رجّعت خطأ، اقرا الخطأ واتصرف: لو فيه أسماء مقترحة جرّب الأقرب أو اسأل المدير أنهي واحد. ما توقفش من أول خطأ.
+- التعديل: update_project (يشمل تغيير الاسم والعميل والسعر والعملة والحالة)، update_client، edit_role، role_progress، update_supplier، update_setting.
+- المسح: delete_project، delete_client، delete_role، remove_record (دفعة، تكلفة، صرف، مصروف، دفعة اتفاق، ملف، بيانات دخول، مورد، مهمة، فكرة)، employee_account.
+- قبل أي مسح لمشروع أو عميل أو دور أو موظف: نادِ الأداة من غير confirmed الأول، اعرض على المدير اللي هيتمسح واسأله "متأكد؟". ما تبعتش confirmed=true غير لما يقول آه صراحة في رسالته.
+- لو حاجة فعلًا مش موجودة في أدواتك، قوله يعملها منين في السيستم (أنهي صفحة وأنهي تبويب) بدل ما تقول مش عارف.` : ""}`;
 }
 
 export async function POST(req: Request) {
@@ -65,7 +71,7 @@ export async function POST(req: Request) {
     ];
     const tools = toolsFor(u);
     let reply = "";
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 16; i++) {
       const m = await chat(messages, tools, { purpose: "assistant", maxTokens: 2000 });
       if (!m) throw new Error("مفيش رد من الموديل.");
       if (m.tool_calls?.length) {
@@ -81,7 +87,7 @@ export async function POST(req: Request) {
       reply = (m.content || "").trim();
       break;
     }
-    if (!reply) reply = "مش قادر أكمل الطلب ده دلوقتي. جرّب تكتبه بشكل أبسط.";
+    if (!reply) reply = "الطلب كان طويل ووقفت في النص. اللي اتعمل لحد دلوقتي اتحفظ. ابعتلي الباقي في رسالة تانية.";
     const unused = files.filter((f) => !f.used).map((f) => f.name);
     await discardUnused(files);
     if (unused.length) reply += `\n\n(الملفات دي ما اتحفظتش لأنها مش متربطة بمشروع: ${unused.join("، ")}. قولي تبع أنهي مشروع وابعتها تاني.)`;

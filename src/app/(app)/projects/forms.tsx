@@ -1,6 +1,6 @@
 "use client";
 import { useActionState, useState } from "react";
-import { createProject, updateProject, addPayment, addCost, saveRole, addDeduction, respondDeduction, type R } from "./actions";
+import { createProject, updateProject, addPayment, addCost, saveRole, addDeduction, respondDeduction, deleteProject, type R } from "./actions";
 
 export function Msg({ s }: { s: R }) {
   return s?.error ? <div className="msg bad" role="alert">{s.error}</div> : s?.ok ? <div className="msg ok">{s.ok}</div> : null;
@@ -174,4 +174,17 @@ function Kinds({ k, v }: { k: string; v?: string | null }) {
     <legend style={{ fontWeight: 700, color: "var(--navy)", fontSize: 13 }}>نوع الشغل</legend>
     <div className="actions">{KIND_LABELS.map(([key, l]) => <label key={key} style={{ flexDirection: "row", alignItems: "center", gap: 6, fontWeight: 400 }}><input type="checkbox" name="kinds" value={key} defaultChecked={on.has(key)} id={`${k}-kind-${key}`} style={{ width: "auto" }} />{l}</label>)}</div>
   </fieldset>);
+}
+
+export function DeleteProject({ id, name }: { id: string; name: string }) {
+  const [s, a, p] = useActionState(deleteProject, {});
+  return (<form action={a}>
+    <Msg s={s} />
+    <input type="hidden" name="id" value={id} />
+    <p className="sub" style={{ marginTop: 0 }}>لو المشروع ده اتسجل بالغلط. هيتمسح «{name}» بكل اللي فيه: الأدوار، الدفعات، التكاليف، الصرف للفريق، الملفات، المهام، الشات والبريفات. العميل نفسه مش هيتمسح.</p>
+    <div className="actions">
+      <label style={{ maxWidth: 240 }}>اكتب «حذف» للتأكيد<input id="del-project" name="confirm" autoComplete="off" /></label>
+      <button className="danger" disabled={p} style={{ alignSelf: "flex-end" }}>حذف المشروع نهائيًا</button>
+    </div>
+  </form>);
 }
