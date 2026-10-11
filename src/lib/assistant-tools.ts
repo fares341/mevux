@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { db, users, projectRoles, roleMembers, projectFiles, clients, payouts } from "./db";
 import type { SessionUser } from "./auth";
 import type { ToolDef } from "./ai";
@@ -33,7 +33,7 @@ const str = (d: string) => ({ type: "string", description: d });
 
 export function toolsFor(u: SessionUser): ToolDef[] {
   const t: ToolDef[] = [
-    fn("my_work", "My roles, progress, deadlines and open tasks."),
+    fn("my_work", "My roles, progress, deadlines, open tasks, and the instructions the admin wrote for my roles."),
     fn("projects_overview", "Projects I can see (the ones I work on): who holds which role and their progress. No money."),
     fn("project_status", "Roles, people, progress and open tasks of one project.", { project: str("project name") }, ["project"]),
     fn("log_update", "Save my daily progress update. Attaches any files the user sent in this message to my role in that project.", { project: str("project name, or empty for a general note"), text: str("the update in the user's words"), progress_percent: { type: "number", description: "optional new progress % for my role in that project" }, mark_delivered: { type: "boolean", description: "true only if the user said they finished and delivered their role" } }, ["text"]),
@@ -74,7 +74,13 @@ export async function runTool(name: string, args: Record<string, unknown>, ctx: 
     case "my_work": {
       const mine = (await loadTeamView(false)).flatMap((p) => p.roles.filter((r) => r.members.some((m) => m.userId === u.id)).map((r) => ({ project: p.name, projectStatus: STATUS[p.status], role: r.title, progress: r.progress, due: day(r.dueDate), delivered: !!r.deliveredAt })));
       const tasks = (await W.listTasks(u, { mine: true, open: true })).map((t) => ({ task: t.title, project: t.project, status: W.TASK_ST[t.status], due: day(t.dueDate) }));
-      return { roles: mine.filter((r) => r.projectStatus !== STATUS.CLOSED), openTasks: tasks };
+      // Instructions the admin left on MY roles only.
+      const { roleNotes, roleMembers: rm } = await import("./db");
+      const myRoleIds = (await db.select({ id: rm.roleId }).from(rm).where(eq(rm.userId, u.id))).map((x) => x.id);
+      const notes = myRoleIds.length ? await db.select({ roleId: roleNotes.roleId, text: roleNotes.text, file: roleNotes.fileName }).from(roleNotes).where(inArray(roleNotes.roleId, myRoleIds)) : [];
+      const roleTitle = new Map((await loadTeamView(false)).flatMap((p) => p.roles.map((r) => [r.id, `${p.name} / ${r.title}`] as const)));
+      return { roles: mine.filter((r) => r.projectStatus !== STATUS.CLOSED), openTasks: tasks,
+        roleInstructions: notes.map((n) => ({ role: roleTitle.get(n.roleId), text: n.text || undefined, file: n.file || undefined })) };
     }
     case "projects_overview": {
       const ok = await W.visibleProjectIds(u);

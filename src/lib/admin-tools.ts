@@ -386,6 +386,6 @@ export async function runAdminTool(name: string, a: Record<string, unknown>, u: 
       return { project: p.name, result: r.ok, link: `/api/briefs/${r.id}` };
     }
   }
-  if (MORE_TOOLS.some((t) => t.function.name === name)) return runMoreTool(name, a, u);
+  if (MORE_TOOLS.some((t) => t.function.name === name)) return runMoreTool(name, a, u, files);
   return { error: "أداة غير معروفة." };
 }

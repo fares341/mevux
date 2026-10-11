@@ -54,6 +54,7 @@ export const MORE_TOOLS: ToolDef[] = [
   fn("show_settings", "Current system settings (percentages, rates, models).", {}),
   fn("cashflow", "Money in and out per month: income, subscriptions, costs, team, fixed costs, expenses, net.", { months: N("how many months back, default 6") }),
   fn("update_supplier", "Change a supplier price or details.", { supplier: S("provider or service name"), price: N("new price"), currency: E(["EGP", "SAR", "USD"], "currency"), billing: E(["MONTHLY", "YEARLY", "PER_MESSAGE", "PER_USAGE", "ONE_TIME"], "billing"), details: S("details") }, ["supplier"]),
+  fn("add_role_note", "Add instructions (a ticket) to someone's role in a project. Files, images or voice sent in this message are attached too. Only that role's people and the admin see it.", { project: S("project name"), role: S("role title or the person in it"), text: S("the instructions") }, ["project", "role"]),
   fn("list_tasks", "Tasks, optionally for one project or person.", { project: S("project"), person: S("person"), open_only: B("default true") }),
 ];
 
@@ -107,7 +108,7 @@ async function deleteProjectFully(id: string) {
   for (const f of files) await removeStored(f.s).catch(() => {});
 }
 
-export async function runMoreTool(name: string, a: Record<string, unknown>, u: SessionUser): Promise<unknown> {
+export async function runMoreTool(name: string, a: Record<string, unknown>, u: SessionUser, files: { stored: string; name: string; size: number; mime: string; used?: boolean }[] = []): Promise<unknown> {
   if (u.role !== "ADMIN") return { error: "غير مسموح." };
   const s = (k: string) => (typeof a[k] === "string" ? (a[k] as string).trim() : undefined);
   const n = (k: string) => (typeof a[k] === "number" ? (a[k] as number) : a[k] !== undefined && a[k] !== "" && a[k] !== null ? Number(a[k]) : undefined);
@@ -336,6 +337,17 @@ export async function runMoreTool(name: string, a: Record<string, unknown>, u: S
     case "update_supplier": {
       const x = pick(await db.select().from(suppliers), s("supplier")!, "مورد", (r) => `${r.provider} ${r.item}`);
       return { supplier: `${x.provider} · ${x.item}`, result: done(await saveSupplier({}, fd({ id: x.id, category: x.category, provider: x.provider, item: x.item, price: n("price") ?? x.price, currency: s("currency") ?? x.currency, billing: s("billing") ?? x.billing, details: s("details") ?? x.details }))) };
+    }
+    case "add_role_note": {
+      const p = await getProject(s("project")!);
+      const r = await getRole(p.id, s("role")!);
+      const { roleNotes } = await import("./db");
+      const todo = files.filter((f) => !f.used);
+      if (!s("text") && !todo.length) throw new Error("قولي التفاصيل أو ابعت ملفات.");
+      if (s("text")) await db.insert(roleNotes).values({ roleId: r.id, authorId: u.id, text: s("text")!.slice(0, 8000) });
+      for (const f of todo) { await db.insert(roleNotes).values({ roleId: r.id, authorId: u.id, fileName: f.name, storedName: f.stored, size: f.size, mime: f.mime, isVoice: f.mime.startsWith("audio/") }); f.used = true; }
+      revalidatePath(`/projects/${p.id}`);
+      return { project: p.name, role: r.title, people: r.members.map((m) => m.name), saved: { text: !!s("text"), files: todo.map((f) => f.name) }, link: `/projects/${p.id}?tab=team` };
     }
     case "list_tasks": {
       let rows = await db.select().from(tasks).orderBy(desc(tasks.createdAt));

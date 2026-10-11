@@ -69,7 +69,7 @@ export function ComplaintForm({ projects }: { projects: (P & { members: P[] })[]
 }
 
 /** Records a voice note and puts it into a hidden <input type=file name=voice> so it is sent with the form. */
-function useVoiceNote() {
+export function useVoiceNote() {
   const [state, setState] = useState<"idle" | "rec">("idle");
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);

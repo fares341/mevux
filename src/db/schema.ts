@@ -399,3 +399,31 @@ export const complaintFiles = pgTable("complaint_files", {
   isVoice: boolean("is_voice").notNull().default(false),
   createdAt: created(),
 });
+
+// Sensitive assistant actions wait here until the admin presses "confirm" in the UI.
+// The model can propose them but can never approve them itself.
+export const assistantPending = pgTable("assistant_pending", {
+  id: id(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tool: text("tool").notNull(),
+  argsJson: text("args_json").notNull(),
+  summary: text("summary").notNull(),
+  status: text("status").notNull().default("PENDING"), // PENDING | DONE | CANCELLED
+  result: text("result"),
+  createdAt: created(),
+});
+
+// Instructions for one role ("ticket"): text, files, images or a voice note from the admin.
+// Visible to that role's people and the admin only.
+export const roleNotes = pgTable("role_notes", {
+  id: id(),
+  roleId: text("role_id").notNull().references(() => projectRoles.id, { onDelete: "cascade" }),
+  authorId: text("author_id").notNull().references(() => users.id),
+  text: text("text").notNull().default(""),
+  fileName: text("file_name"),
+  storedName: text("stored_name").unique(),
+  size: integer("size"),
+  mime: text("mime"),
+  isVoice: boolean("is_voice").notNull().default(false),
+  createdAt: created(),
+});

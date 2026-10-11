@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
-type M = { role: "user" | "assistant"; content: string };
+type P = { id: string; summary: string; state?: "busy" | "done" };
+type M = { role: "user" | "assistant"; content: string; pending?: P[] };
 
 import { toWav } from "@/lib/wav";
 
@@ -40,10 +41,21 @@ export default function Chat({ initial, hints }: { initial: M[]; hints: string[]
       setMsgs((m) => {
         const copy = [...m];
         if (j.transcript) copy[copy.length - 1] = { role: "user", content: [t, `🎙️ ${j.transcript}`].filter(Boolean).join("\n") + (label.includes("📎") ? "\n" + label.split("\n").pop() : "") };
-        return [...copy, { role: "assistant", content: j.reply }];
+        return [...copy, { role: "assistant", content: j.reply, pending: j.pending?.length ? j.pending : undefined }];
       });
     } catch (e) { setErr(e instanceof Error ? e.message : "حصل خطأ"); }
     finally { setBusy(false); }
+  }
+
+  // Sensitive actions only run when the owner clicks here (the assistant can't approve them itself).
+  async function decide(mi: number, p: P, cancel = false) {
+    const mark = (state: P["state"]) => setMsgs((m) => m.map((x, i) => (i === mi ? { ...x, pending: x.pending?.map((y) => (y.id === p.id ? { ...y, state } : y)) } : x)));
+    mark("busy"); setErr("");
+    try {
+      const r = await fetch("/api/assistant/confirm", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: p.id, cancel }) });
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || "حصل خطأ");
+      mark("done"); setMsgs((m) => [...m, { role: "assistant", content: j.reply }]);
+    } catch (e) { mark(undefined); setErr(e instanceof Error ? e.message : "حصل خطأ"); }
   }
 
   async function toggleMic() {
@@ -63,7 +75,13 @@ export default function Chat({ initial, hints }: { initial: M[]; hints: string[]
   return (<div className="chat card plain">
     <div className="msgs" aria-live="polite">
       {!msgs.length && <div className="hints"><p className="sub">جرّب:</p>{hints.map((h) => <button key={h} className="sm ghost" onClick={() => send({ text: h })} disabled={busy}>{h}</button>)}</div>}
-      {msgs.map((m, i) => <div key={i} className={"bubble " + m.role}>{m.role === "assistant" ? <Linkify text={m.content} /> : m.content}</div>)}
+      {msgs.map((m, i) => <div key={i} className={"bubble " + m.role}>{m.role === "assistant" ? <Linkify text={m.content} /> : m.content}
+        {m.pending?.map((p) => <div key={p.id} className="confirm-box">
+          <b>محتاج تأكيدك:</b><span>{p.summary}</span>
+          {p.state === "done" ? <small>✓ اتعمل</small> : <div className="actions">
+            <button className="sm" disabled={p.state === "busy"} onClick={() => decide(i, p)}>تأكيد</button>
+            <button className="sm ghost" disabled={p.state === "busy"} onClick={() => decide(i, p, true)}>إلغاء</button></div>}
+        </div>)}</div>)}
       {busy && <div className="bubble assistant typing">بيفكر…</div>}
       <div ref={end} />
     </div>

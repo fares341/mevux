@@ -8,6 +8,7 @@ import { loadProject, loadTeamView, calc, rules, STATUS, SIZE, DED, ACTIVE } fro
 import { egp } from "@/lib/finance";
 import { BILLING } from "@/lib/labels";
 import { removeRow, setDelivered, updateProgress, decideDeduction } from "../actions";
+import { RoleNotes, loadRoleNotes } from "../role-notes";
 import { EditProject, PaymentForm, CostForm, RoleForm, DeductionForm, DeleteProject } from "../forms";
 import { RoleUpload } from "../files-ui";
 import { ProjectAssets } from "../assets";
@@ -39,6 +40,8 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     const mine = p?.roles.some((r) => r.members.some((m) => m.userId === me.id));
     if (!p || !(await visibleProjectIds(me)).has(p.id)) notFound();
     const files = mine ? await loadFiles(p.id) : [];
+    // Role instructions: only for roles this person is in.
+    const notes = await loadRoleNotes(p.roles.filter((r) => r.members.some((m) => m.userId === me.id)).map((r) => r.id));
     return (<>
       <PageHead title={p.name} crumbs={[{ href: "/projects", label: "المشاريع" }]} badge={<span className="pill info">{STATUS[p.status]}</span>}
         help={<>{p.client} · التسليم {fmt(p.dueDate)}. حدّث تقدمك وارفع ملفك من كارت دورك.</>} actions={mine ? [{ href: `/chats/${p.id}`, label: "شات المشروع", icon: "chat" }] : undefined} />
@@ -51,6 +54,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
           {r.deliverables && <p style={{ whiteSpace: "pre-wrap" }}><b>المخرجات: </b>{r.deliverables}</p>}
           <div className="actions"><b>التقدم:</b> <Progress roleId={r.id} value={r.progress} canEdit={own} /></div>
           {mine && <div style={{ marginTop: 12 }}><b style={{ color: "var(--navy)" }}>ملفات الدور</b><FileList files={files.filter((f) => f.roleId === r.id)} me={me} /></div>}
+          {own && <RoleNotes notes={notes} roleId={r.id} admin={false} />}
           {own && <details style={{ marginTop: 10 }} open={!r.deliveredAt}><summary>ارفع ملف شغلك</summary><div style={{ marginTop: 10 }}><RoleUpload roleId={r.id} delivered={!!r.deliveredAt} /></div></details>}
         </section>); })}
       {mine && <ProjectAssets projectId={p.id} admin={false} />}
@@ -68,6 +72,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   ]);
   if (!p) notFound();
   const files = await loadFiles(p.id);
+  const notes = await loadRoleNotes(p.roles.map((ro) => ro.id));
   const allClients = await db.select({ id: clients.id, name: clients.name }).from(clients).orderBy(asc(clients.name));
   const briefs = await db.select().from(projectBriefs).where(eq(projectBriefs.projectId, p.id)).orderBy(desc(projectBriefs.createdAt));
   const c = calc(p, r);
@@ -125,6 +130,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
               <input aria-label="تاريخ التسليم" id={"dl-" + ro.id} name="deliveredAt" type="date" defaultValue={ro.deliveredAt ? ro.deliveredAt.toISOString().slice(0, 10) : ""} style={{ maxWidth: 160 }} /><button className="sm ghost">{ro.deliveredAt ? "تعديل تاريخ التسليم" : "تسجيل التسليم"}</button></form>
             <Progress roleId={ro.id} value={ro.progress} canEdit />
           </div>
+          <RoleNotes notes={notes} roleId={ro.id} admin />
           <div style={{ marginTop: 10 }}><b style={{ color: "var(--navy)" }}>ملفات الدور</b><FileList files={files.filter((f) => f.roleId === ro.id)} me={me} /></div>
           <details style={{ marginTop: 10 }}><summary>تعديل ملف الدور</summary><div style={{ marginTop: 12 }}>
             <RoleForm projectId={p.id} users={userOpts} label="حفظ الدور" role={{ id: ro.id, title: ro.title, fee: ro.fee, scope: ro.scope, deliverables: ro.deliverables, dueDate: ro.dueDate, members: ro.members }} />

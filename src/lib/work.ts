@@ -51,7 +51,8 @@ export async function activeUsers() {
 export async function createTask(u: SessionUser, d: { projectId: string; title: string; details?: string; assigneeId?: string; dueDate?: Date | null; roleId?: string }) {
   if (!isLead(u)) throw new Error("إنشاء المهام للمدير والتيم ليد بس.");
   if (!(await canSeeProject(u, d.projectId))) throw new Error("المشروع غير موجود.");
-  if (d.assigneeId && !(await activeUsers()).some((x) => x.id === d.assigneeId)) throw new Error("الشخص غير موجود.");
+  if (d.assigneeId && !(await membersOf(d.projectId)).some((x) => x.id === d.assigneeId)) throw new Error("الشخص ده مش في المشروع.");
+  if (d.roleId) { const r = await db.query.projectRoles.findFirst({ where: and(eq(projectRoles.id, d.roleId), eq(projectRoles.projectId, d.projectId)) }); if (!r) d.roleId = undefined; }
   const [t] = await db.insert(tasks).values({ projectId: d.projectId, title: d.title.slice(0, 200), details: d.details?.slice(0, 4000), assigneeId: d.assigneeId || null, dueDate: d.dueDate ?? null, roleId: d.roleId || null, createdBy: u.id }).returning();
   await audit(u.id, "task_create", t.title);
   return t;
@@ -60,6 +61,7 @@ export async function createTask(u: SessionUser, d: { projectId: string; title: 
 export async function setTaskStatus(u: SessionUser, taskId: string, status: TaskSt) {
   const t = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
   if (!t) throw new Error("المهمة غير موجودة.");
+  if (!(await canSeeProject(u, t.projectId))) throw new Error("المهمة غير موجودة.");
   if (!isLead(u) && t.assigneeId !== u.id) throw new Error("دي مش مهمتك.");
   await db.update(tasks).set({ status, doneAt: status === "DONE" ? new Date() : null }).where(eq(tasks.id, taskId));
   await audit(u.id, "task_status", `${t.title} → ${status}`);
@@ -156,8 +158,11 @@ export async function respondComplaint(u: SessionUser, id: string, text: string)
 /** Reporter identity is returned to the admin only. */
 export async function listComplaints(u: SessionUser, opts: { open?: boolean } = {}) {
   const base = db.select({ c: complaints, project: projects.name, against: users.name }).from(complaints).innerJoin(projects, eq(complaints.projectId, projects.id)).innerJoin(users, eq(complaints.againstId, users.id));
-  const where = isLead(u) ? undefined : or(eq(complaints.againstId, u.id), eq(complaints.reporterId, u.id));
-  const rows = await base.where(where).orderBy(desc(complaints.createdAt));
+  // Admin: all. Team lead: complaints on projects in their scope, never ones about themselves unless they are the accused view.
+  // Member: only complaints they filed or that are about them.
+  const mineOrAboutMe = or(eq(complaints.againstId, u.id), eq(complaints.reporterId, u.id));
+  let rows = await base.where(u.role === "ADMIN" ? undefined : u.role === "TEAM_LEAD" ? undefined : mineOrAboutMe).orderBy(desc(complaints.createdAt));
+  if (u.role === "TEAM_LEAD") { const vis = await visibleProjectIds(u); rows = rows.filter((r) => r.c.reporterId === u.id || r.c.againstId === u.id || vis.has(r.c.projectId)); }
   const reporters = u.role === "ADMIN" ? await db.select({ id: users.id, name: users.name }).from(users) : [];
   // Evidence files: the admin sees all; a reporter sees only what they uploaded. The accused never sees them
   // (a screenshot or voice could reveal who complained).
@@ -167,7 +172,7 @@ export async function listComplaints(u: SessionUser, opts: { open?: boolean } = 
   return rows.filter((r) => !opts.open || ["OPEN", "ANSWERED"].includes(r.c.status)).map((r) => ({
     files: filesFor(r.c.id),
     id: r.c.id, projectId: r.c.projectId, project: r.project, againstId: r.c.againstId, against: r.against,
-    text: r.c.text, evidence: r.c.evidence, response: r.c.response, status: r.c.status, decisionNote: r.c.decisionNote, createdAt: r.c.createdAt,
+    text: r.c.text, evidence: u.role === "ADMIN" || r.c.reporterId === u.id ? r.c.evidence : null, /* written evidence can reveal the reporter */ response: r.c.response, status: r.c.status, decisionNote: r.c.decisionNote, createdAt: r.c.createdAt,
     mine: r.c.reporterId === u.id,
     reporter: u.role === "ADMIN" ? reporters.find((x) => x.id === r.c.reporterId)?.name ?? "—" : null,
   }));

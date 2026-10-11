@@ -391,3 +391,16 @@ fieldset.evidence legend { font-weight: 700; color: var(--navy); padding: 0 6px;
 .wa-msg:focus { outline: none; }
 body:has(.wa) .fab { display: none; } /* the floating assistant button would cover the message box */
 @media (max-width: 760px) { .wa { height: calc(100dvh - 120px); border-radius: 0; margin-inline: -16px; } .wa-msg { max-width: 86%; } .wa-msg:hover .wa-acts { display: none; } .wa-msg:focus-within .wa-acts { display: flex; } }
+.confirm-box { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); border: 1px solid #F1D29A; color: var(--ink); display: flex; flex-direction: column; gap: 6px; white-space: normal; }
+.confirm-box b { color: var(--warn); }
+/* Role instructions */
+.rnotes { margin-top: 12px; padding: 12px 14px; background: var(--pale); border: 1px solid var(--line); border-inline-start: 4px solid var(--cyan); border-radius: var(--radius); }
+.rnotes-h { color: var(--navy); }
+.rnotes-list { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 10px; }
+.rnotes-list li { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+.rn-text { white-space: pre-wrap; line-height: 1.8; }
+.rn-img { max-width: 260px; max-height: 220px; border-radius: 6px; display: block; }
+.rn-video { max-width: 320px; border-radius: 6px; }
+.rn-voice { display: flex; align-items: center; gap: 6px; } .rn-voice audio { height: 36px; max-width: 100%; }
+.rn-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; } .rn-meta small { color: var(--muted); }
+.rn-add { margin-top: 10px; }
