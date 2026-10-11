@@ -32,7 +32,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
   const idx = STAGE_ORDER.indexOf(c.stage as (typeof STAGE_ORDER)[number]);
   return (<>
     <div className="head"><div><span className="tag">العملاء</span><h1>{c.name}</h1><p className="sub">{[c.company, c.country].filter(Boolean).join(" · ")}{c.phone && <> · <bdi dir="ltr">{c.phone}</bdi></>}{c.email && <> · <bdi dir="ltr">{c.email}</bdi></>}</p></div>
-      <Link className="btn" href={`/projects?tab=new&client=${c.id}`}>+ مشروع للعميل ده</Link></div>
+      <div className="actions">{ps[0] && <Link className="btn" style={{ background: "var(--pink)" }} href={`/briefs?project=${ps[0].id}`}>عمل بريف</Link>}<Link className="btn" href={`/projects?tab=new&client=${c.id}`}>+ مشروع للعميل ده</Link></div></div>
 
     <div className="pipeline">
       {STAGE_ORDER.map((s, i) => <div key={s} className={"step" + (i < idx ? " past" : i === idx ? " on" : "")}><span className="n num">{i + 1}</span><b>{STAGES[s]}</b></div>)}

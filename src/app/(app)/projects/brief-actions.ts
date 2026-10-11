@@ -18,7 +18,8 @@ export async function generateBrief(_: R, fd: FormData): Promise<R> {
   const extra = String(fd.get("extra") || "").slice(0, 6000);
   const supplierIds = fd.getAll("supplierId").map(String).slice(0, 20);
   try {
-    const facts = await briefFacts(projectId, supplierIds);
+    const usage = Number(fd.get("usageEstimate"));
+    const facts = await briefFacts(projectId, { supplierIds, usageEstimate: Number.isFinite(usage) && usage > 0 ? usage : undefined, opsNote: String(fd.get("opsNote") || "").slice(0, 600) });
     const content = await writeBrief(facts, lang, extra);
     const pdf = await toPdf(await renderBrief(content, facts, lang));
     const name = `MEVIX_${facts.p.name}_Brief_${lang.toUpperCase()}.pdf`.replace(/[\\/:*?"<>|\s]+/g, "_");
@@ -27,7 +28,7 @@ export async function generateBrief(_: R, fd: FormData): Promise<R> {
     const [b] = await db.insert(projectBriefs).values({ projectId, lang, storedName: s.stored, size: s.size, createdBy: admin.id }).returning();
     if (facts.client) { const c = await saveFile(file); await db.insert(clientFiles).values({ clientId: facts.client.id, kind: "BRIEF", uploadedBy: admin.id, originalName: name, storedName: c.stored, size: c.size, mime: "application/pdf", note: `اتولّد من مشروع ${facts.p.name}` }); revalidatePath(`/clients/${facts.client.id}`); }
     await audit(admin.id, "brief_generate", `${projectId} ${lang}`);
-    revalidatePath(`/projects/${projectId}`);
+    revalidatePath(`/projects/${projectId}`); revalidatePath("/briefs");
     return { ok: "البريف جاهز." + (facts.client ? " واتحفظ نسخة في ملف العميل." : ""), id: b.id };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "حصل خطأ في توليد البريف." };
@@ -41,5 +42,5 @@ export async function deleteBrief(fd: FormData) {
   await db.delete(projectBriefs).where(eq(projectBriefs.id, b.id));
   await removeStored(b.storedName);
   await audit(admin.id, "brief_delete", b.id);
-  revalidatePath(`/projects/${b.projectId}`);
+  revalidatePath(`/projects/${b.projectId}`); revalidatePath("/briefs");
 }

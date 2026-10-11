@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";
@@ -67,7 +68,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const allDeds = p.roles.flatMap((ro) => ro.deductions.map((dd) => ({ ...dd, role: ro.title })));
 
   return (<>
-    <div className="head"><div><span className="tag">{STATUS[p.status]} · {SIZE[p.size]}</span><h1>{p.name}</h1><p className="sub">{p.client} · <span className="num">{egp(p.price)}</span> {CUR[p.currency]}{p.currency !== "EGP" && <> × <span className="num">{p.rate}</span></>}</p></div></div>
+    <div className="head"><div><span className="tag">{STATUS[p.status]} · {SIZE[p.size]}</span><h1>{p.name}</h1><p className="sub">{p.client} · <span className="num">{egp(p.price)}</span> {CUR[p.currency]}{p.currency !== "EGP" && <> × <span className="num">{p.rate}</span></>}</p></div>
+      <Link className="btn" style={{ background: "var(--pink)" }} href={`/briefs?project=${p.id}`}>عمل بريف</Link></div>
 
     <div className="grid">
       <div className="stat"><b className="num">{egp(c.revenue)}</b><span>قيمة المشروع (ج)</span></div>
@@ -119,7 +121,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         <span><a href={`/api/briefs/${b.id}`} target="_blank" rel="noopener"><b>بريف {b.lang === "ar" ? "عربي" : "English"}</b></a> <span className="sub">· {b.createdAt.toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span></span>
         <form action={deleteBrief}><input type="hidden" name="id" value={b.id} /><button className="sm ghost">حذف</button></form></div>)}
       <div style={{ marginTop: 14 }}><b style={{ color: "var(--navy)" }}>توليد بريف جديد</b><div style={{ marginTop: 10 }}>
-        <BriefForm projectId={p.id} hint={p.description || "مثال: الفرعين بيستخدموا كاشيرين، 90% من العملاء بيجوا من الخرايط…"} suppliers={sups.map((s) => ({ id: s.id, label: `${s.provider} · ${s.item} (${s.price} ${CUR[s.currency]} ${BILLING[s.billing]})` }))} />
+        <BriefForm projectId={p.id} currency={CUR[p.currency]} hint={p.description || "مثال: الفرعين بيستخدموا كاشيرين، 90% من العملاء بيجوا من الخرايط…"} suppliers={sups.map((s) => ({ id: s.id, label: `${s.provider} · ${s.item} (${s.price} ${CUR[s.currency]} ${BILLING[s.billing]})` }))} />
       </div></div>
     </section>
 
