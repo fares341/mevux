@@ -2,7 +2,7 @@ import Link from "next/link";
 import { desc } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
 import { db, clients, projects } from "@/lib/db";
-import { STAGES, STAGE_ORDER, type Stage } from "@/lib/labels";
+import { STAGES, STAGE_ORDER, stageLabel, type Stage } from "@/lib/labels";
 import { NewClient } from "./forms";
 
 const fmt = (x: Date | null) => (x ? x.toLocaleDateString("ar-EG", { day: "numeric", month: "short" }) : "");
@@ -35,7 +35,7 @@ export default async function Clients({ searchParams }: { searchParams: Promise<
       <thead><tr><th>العميل</th><th>المرحلة</th><th>الخطوة الجاية</th><th>الموعد</th><th>مشاريع شغالة</th><th>آخر تحديث</th></tr></thead>
       <tbody>{list.map((c) => { const late = c.nextDate && c.nextDate < today(); return (<tr key={c.id}>
         <td><Link href={`/clients/${c.id}`}><b>{c.name}</b></Link>{c.company && <div className="sub" style={{ margin: 0 }}>{c.company}</div>}</td>
-        <td><span className={"pill " + (c.stage === "LOST" ? "bad" : ["AGREED", "ACTIVE", "DONE"].includes(c.stage) ? "ok" : c.stage === "ON_HOLD" ? "warn" : "info")}>{STAGES[c.stage]}</span></td>
+        <td><span className={"pill " + (c.stage === "LOST" ? "bad" : ["AGREED", "ACTIVE", "DONE"].includes(c.stage) ? "ok" : c.stage === "ON_HOLD" ? "warn" : "info")}>{stageLabel(c)}</span>{c.customStage && <div className="sub" style={{ margin: 0, fontSize: 11 }}>{STAGES[c.stage]}</div>}</td>
         <td>{c.nextStep || <span className="sub">—</span>}</td>
         <td>{c.nextDate ? <span className={late ? "pill bad" : ""}>{fmt(c.nextDate)}</span> : "—"}</td>
         <td className="num">{activeProjects(c.id) || "—"}</td>

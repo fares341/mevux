@@ -200,6 +200,7 @@ export const clients = pgTable("clients", {
   source: text("source"),
   need: text("need"),
   stage: clientStage("stage").notNull().default("NEW"),
+  customStage: text("custom_stage"),
   nextStep: text("next_step"),
   nextDate: timestamp("next_date", { withTimezone: true }),
   createdAt: created(),
@@ -209,7 +210,37 @@ export const clientEvents = pgTable("client_events", {
   id: id(),
   clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
   stage: clientStage("stage"),
+  customStage: text("custom_stage"),
   note: text("note"),
   by: text("by_user"),
+  createdAt: created(),
+});
+
+export const clientFiles = pgTable("client_files", {
+  id: id(),
+  clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull().default("BRIEF"), // BRIEF | CONTRACT | OTHER
+  uploadedBy: text("uploaded_by").notNull().references(() => users.id),
+  originalName: text("original_name").notNull(),
+  storedName: text("stored_name").notNull().unique(),
+  size: integer("size").notNull(),
+  mime: text("mime").notNull(),
+  note: text("note"),
+  createdAt: created(),
+});
+
+// The payment agreement with a client. Ticking "paid" on an item linked to a project
+// also records it as a project payment (and unticking removes that payment).
+export const installments = pgTable("installments", {
+  id: id(),
+  clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  label: text("label").notNull(),
+  amount: numeric("amount", { precision: 14, scale: 2, mode: "number" }).notNull(),
+  currency: text("currency").notNull().default("EGP"),
+  dueNote: text("due_note"),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  paymentId: text("payment_id"),
+  sort: integer("sort").notNull().default(0),
   createdAt: created(),
 });

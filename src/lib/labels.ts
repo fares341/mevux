@@ -13,3 +13,4 @@ export const STAGES = {
 } as const;
 export type Stage = keyof typeof STAGES;
 export const STAGE_ORDER: Stage[] = ["NEW", "MEETING_SET", "MEETING_DONE", "BRIEF_SENT", "NEGOTIATION", "AGREED", "ACTIVE", "DONE"];
+export const stageLabel = (c: { stage: Stage; customStage?: string | null }) => c.customStage || STAGES[c.stage];
