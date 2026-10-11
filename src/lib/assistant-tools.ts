@@ -66,7 +66,7 @@ export async function runTool(name: string, args: Record<string, unknown>, ctx: 
   const { u } = ctx;
   const allowed = toolsFor(u).some((t) => t.function.name === name);
   if (!allowed) { await audit(u.id, "assistant_denied_tool", name); return { error: "غير مسموح." }; }
-  if (ADMIN_TOOLS.some((t) => t.function.name === name)) return runAdminTool(name, args, u);
+  if (ADMIN_TOOLS.some((t) => t.function.name === name)) return runAdminTool(name, args, u, ctx.files);
   const a = (k: string) => (typeof args[k] === "string" ? (args[k] as string).trim() : "");
   const vis = () => W.visibleProjects(u);
 
@@ -153,7 +153,14 @@ export async function runTool(name: string, args: Record<string, unknown>, ctx: 
       const sum = (f: (x: (typeof closed)[number]) => number) => Math.round(closed.reduce((s, x) => s + f(x), 0));
       const team = await db.select({ id: users.id, name: users.name }).from(users);
       const paid = await db.select().from(payouts);
-      return { currency: "EGP", closedProjects: closed.length, revenue: sum((x) => x.c.revenue), ownerIncome: sum((x) => x.c.owner), companyShare: sum((x) => x.c.company), fund: sum((x) => x.c.fund),
+      const { cashflow } = await import("./cashflow");
+      const cf = await cashflow(12);
+      const m = cf.months[cf.months.length - 1];
+      return { currency: "EGP",
+        thisMonth: { income: Math.round(m.income), spent: Math.round(m.out), net: Math.round(m.net) },
+        last12Months: cf.months.map((x) => ({ month: x.key, income: Math.round(x.income), spent: Math.round(x.out), net: Math.round(x.net) })),
+        subscriptions: { monthlyTotal: Math.round(cf.mrr), clients: cf.subs.map((x) => ({ project: x.name, client: x.client, fee: x.fee, currency: x.currency, paidThisMonth: x.paidThisMonth })) },
+        closedProjects: closed.length, revenue: sum((x) => x.c.revenue), ownerIncome: sum((x) => x.c.owner), companyShare: sum((x) => x.c.company), fund: sum((x) => x.c.fund),
         activePipelineValue: Math.round(projectsCalc.filter((x) => ["APPROVED", "IN_PROGRESS", "DELIVERED"].includes(x.p.status)).reduce((s, x) => s + x.c.revenue, 0)),
         teamDue: team.map((t) => ({ name: t.name, due: Math.round((map.get(t.id)?.entitled ?? 0) - paid.filter((p) => p.userId === t.id).reduce((s, p) => s + p.amountEgp, 0)) })).filter((x) => x.due) };
     }

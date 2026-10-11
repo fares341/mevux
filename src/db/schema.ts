@@ -336,3 +336,13 @@ export const chatReads = pgTable("chat_reads", {
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   lastReadAt: timestamp("last_read_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// General company expenses (ads, tools, one-off purchases) for the monthly cash view.
+export const expenses = pgTable("expenses", {
+  id: id(),
+  name: text("name").notNull(),
+  category: text("category").notNull().default("OTHER"), // ADS | TOOLS | SALARIES | OTHER
+  amountEgp: numeric("amount_egp", { precision: 12, scale: 2, mode: "number" }).notNull(),
+  spentAt: timestamp("spent_at", { withTimezone: true }).notNull().defaultNow(),
+  note: text("note"),
+});

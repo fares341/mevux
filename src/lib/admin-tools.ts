@@ -1,6 +1,7 @@
 import "server-only";
 import { asc, desc, eq } from "drizzle-orm";
-import { db, users, clients, clientEvents, projects, installments, suppliers, bans } from "./db";
+import { db, users, clients, clientEvents, projects, installments, suppliers, bans, projectPayments, projectRoles, roleMembers, projectFiles, clientFiles, expenses, payouts } from "./db";
+import type { Pending } from "./assistant-tools";
 import type { SessionUser } from "./auth";
 import type { ToolDef } from "./ai";
 import { getSettings } from "./settings";
@@ -35,7 +36,7 @@ export const ADMIN_TOOLS: ToolDef[] = [
   fn("list_projects_admin", "All projects with status, price, contract type and client.", {}),
   fn("create_client", "Add a new client.", { name: S("client name"), company: S("company / business"), phone: S("phone"), country: S("country"), need: S("what they need"), stage: E(STAGE_KEYS, "deal stage, default NEW"), next_step: S("next step"), next_date: S("YYYY-MM-DD") }, ["name"]),
   fn("update_client_stage", "Move a client to a stage and/or write a custom status, log what happened, set the next step.", { client: S("client name"), stage: E(STAGE_KEYS, "fixed stage"), custom_status: S("owner's own status wording, optional"), note: S("what happened"), next_step: S("next step"), next_date: S("YYYY-MM-DD") }, ["client"]),
-  fn("create_project", "Create a project, optionally for an existing client.", { name: S("project name"), client: S("client name (existing client or free text)"), price: N("implementation / setup price"), currency: CUR, billing: E(["ONE_TIME", "SUBSCRIPTION"], "contract type"), monthly_fee: N("monthly subscription if SUBSCRIPTION"), free_messages: N("free WhatsApp messages per month, default 1000"), status: E(["MEETING", "BRIEF", "APPROVED", "IN_PROGRESS"], "stage"), start_date: S("YYYY-MM-DD"), due_date: S("YYYY-MM-DD"), size: E(["SMALL", "MEDIUM", "LARGE"], "size"), description: S("description") }, ["name", "client", "price", "currency"]),
+  fn("create_project", "Create a project, optionally for an existing client.", { name: S("project name"), client: S("client name (existing client or free text)"), price: N("implementation / setup price"), currency: CUR, billing: E(["ONE_TIME", "SUBSCRIPTION"], "contract type"), monthly_fee: N("monthly subscription if SUBSCRIPTION"), free_messages: N("free WhatsApp messages per month, default 1000"), status: E(["MEETING", "BRIEF", "APPROVED", "IN_PROGRESS", "DELIVERED", "CLOSED"], "stage"), start_date: S("YYYY-MM-DD"), due_date: S("YYYY-MM-DD"), size: E(["SMALL", "MEDIUM", "LARGE"], "size"), description: S("description") }, ["name", "client", "price", "currency"]),
   fn("set_project_status", "Change a project's stage (e.g. CLOSED when the client accepted and paid).", { project: S("project name"), status: E(Object.keys(STATUS), "new status") }, ["project", "status"]),
   fn("add_role", "Add a role to a project with its fee and people. If two people share it give their shares.", { project: S("project name"), title: S("role title"), fee: N("role fee in EGP"), people: { type: "array", items: { type: "string" }, description: "names of the people in the role" }, shares: { type: "array", items: { type: "number" }, description: "percent for each person, same order, sum 100; omit for equal split" }, due_date: S("YYYY-MM-DD"), scope: S("what is required"), deliverables: S("deliverables") }, ["project", "title", "fee", "people"]),
   fn("record_payment", "Record a client payment on a project (in the project currency).", { project: S("project name"), amount: N("amount"), note: S("note") }, ["project", "amount"]),
@@ -46,6 +47,19 @@ export const ADMIN_TOOLS: ToolDef[] = [
   fn("add_credential", "Save login details for a project (shown to the project team).", { project: S("project name"), label: S("what it is"), url: S("url / IP"), username: S("username"), secret: S("password / key"), notes: S("notes") }, ["project", "label"]),
   fn("create_employee", "Create an employee account. Returns a one-time password to give them.", { name: S("full name"), username: S("login username, lowercase english"), job_title: S("specialty"), role: E(["MEMBER", "TEAM_LEAD"], "permission") }, ["name", "username"]),
   fn("record_payout", "Record money paid to a team member (EGP).", { person: S("name"), amount: N("EGP"), project: S("project, optional"), note: S("note") }, ["person", "amount"]),
+  fn("import_old_project", "Add a past or ongoing project with its client in one go (for old work). Creates/links the client, the project with real dates and status, the amount the client paid, the people who worked on it, and attaches any files sent in this message.", {
+    client: S("client name"), client_company: S("company / business"), client_phone: S("phone"), client_country: S("country"),
+    project: S("project name"), description: S("what was built"), price: N("project price"), currency: CUR,
+    billing: E(["ONE_TIME", "SUBSCRIPTION"], "contract type"), monthly_fee: N("monthly subscription if any"),
+    status: E(["IN_PROGRESS", "DELIVERED", "CLOSED", "CANCELLED"], "CLOSED = finished and paid"),
+    start_date: S("YYYY-MM-DD"), end_date: S("YYYY-MM-DD (delivery / close date)"),
+    paid_amount: N("total the client paid, in the project currency"),
+    team: { type: "array", description: "who worked on it", items: { type: "object", properties: { person: S("name"), role: S("role title"), fee: N("fee paid to them in EGP") }, required: ["person", "role"], additionalProperties: false } },
+    files_kind: E(["FINAL", "CLIENT_BRIEF", "CLIENT_CONTRACT", "CLIENT_OTHER"], "where to store attached files: project final files, or the client's file"),
+    team_already_paid: { type: "boolean", description: "true (default) if the team was already paid for this old project; records their payouts so they don't show as owed" },
+  }, ["client", "project", "price", "currency", "status"]),
+  fn("attach_files", "Store the files sent in this message on a project (final files) or in a client's file.", { target: E(["project", "client"], "where"), name: S("project or client name"), kind: E(["FINAL", "BRIEF", "CONTRACT", "OTHER"], "file type") }, ["target", "name"]),
+  fn("record_expense", "Record a company expense (EGP) such as ads, tools, salaries.", { name: S("what"), amount_egp: N("EGP"), category: E(["ADS", "TOOLS", "SALARIES", "OTHER"], "category"), date: S("YYYY-MM-DD, default today"), note: S("note") }, ["name", "amount_egp"]),
   fn("generate_brief", "Generate a client brief PDF for a project. Takes about a minute.", { project: S("project name"), lang: E(["ar", "en"], "language"), context: S("everything known about the client and the need") }, ["project"]),
 ];
 
@@ -64,7 +78,17 @@ const allClients = () => db.select().from(clients).orderBy(asc(clients.name));
 const allProjects = () => db.select().from(projects).orderBy(desc(projects.createdAt));
 const team = () => db.select({ id: users.id, name: users.name, active: users.active }).from(users);
 
-export async function runAdminTool(name: string, a: Record<string, unknown>, u: SessionUser): Promise<unknown> {
+async function storeFiles(files: Pending[], u: SessionUser, where: { projectId?: string; clientId?: string; kind: string }) {
+  const todo = files.filter((f) => !f.used);
+  for (const f of todo) {
+    if (where.projectId) await db.insert(projectFiles).values({ projectId: where.projectId, kind: "FINAL", uploadedBy: u.id, originalName: f.name, storedName: f.stored, size: f.size, mime: f.mime, note: "من المساعد" });
+    else if (where.clientId) await db.insert(clientFiles).values({ clientId: where.clientId, kind: where.kind, uploadedBy: u.id, originalName: f.name, storedName: f.stored, size: f.size, mime: f.mime, note: "من المساعد" });
+    f.used = true;
+  }
+  return todo.map((f) => f.name);
+}
+
+export async function runAdminTool(name: string, a: Record<string, unknown>, u: SessionUser, files: Pending[] = []): Promise<unknown> {
   if (u.role !== "ADMIN") return { error: "غير مسموح." };
   const s = (k: string) => (typeof a[k] === "string" ? (a[k] as string).trim() : undefined);
   const n = (k: string) => (typeof a[k] === "number" ? (a[k] as number) : a[k] !== undefined && a[k] !== "" ? Number(a[k]) : undefined);
@@ -179,6 +203,56 @@ export async function runAdminTool(name: string, a: Record<string, unknown>, u: 
       const person = pick((await team()), s("person")!, "موظف");
       const pr = s("project") ? pick(await allProjects(), s("project")!, "مشروع") : undefined;
       return { person: person.name, result: done(await addPayout({}, fd({ userId: person.id, projectId: pr?.id, amount: n("amount"), note: s("note") }))) };
+    }
+    case "import_old_project": {
+      const st = await getSettings();
+      const cname = s("client")!;
+      let cl = (await allClients()).find((x) => norm(x.name) === norm(cname));
+      const status = (s("status") || "CLOSED") as "IN_PROGRESS" | "DELIVERED" | "CLOSED" | "CANCELLED";
+      if (!cl) {
+        [cl] = await db.insert(clients).values({ name: cname, company: s("client_company"), phone: s("client_phone"), country: s("client_country"), need: s("description"), stage: status === "IN_PROGRESS" ? "ACTIVE" : status === "CANCELLED" ? "LOST" : "DONE" }).returning();
+        await db.insert(clientEvents).values({ clientId: cl.id, stage: cl.stage, note: "عميل قديم اتضاف من المساعد", by: u.id });
+      }
+      const cur = s("currency") || "EGP";
+      const rate = cur === "SAR" ? Number(st.rateSAR) : cur === "USD" ? Number(st.rateUSD) : 1;
+      const start = s("start_date") ? new Date(s("start_date")!) : null, end = s("end_date") ? new Date(s("end_date")!) : null;
+      if ((await allProjects()).some((x) => norm(x.name) === norm(s("project")!) && x.clientId === cl!.id)) throw new Error("المشروع ده متسجل قبل كده لنفس العميل.");
+      const [p] = await db.insert(projects).values({
+        name: s("project")!, client: cl.name, clientId: cl.id, currency: cur, rate, price: n("price") ?? 0, status, size: "MEDIUM",
+        billing: s("billing") === "SUBSCRIPTION" ? "SUBSCRIPTION" : "ONE_TIME", monthlyFee: n("monthly_fee") ?? null,
+        fundPct: Number(st.fundPct), ownerPct: Number(st.ownerPct), teamCapPct: Number(st.teamCapPct),
+        startDate: start, dueDate: end, closedAt: status === "CLOSED" ? (end ?? new Date()) : null, description: s("description"), createdAt: start ?? undefined,
+      }).returning();
+      const paid = n("paid_amount");
+      if (paid) await db.insert(projectPayments).values({ projectId: p.id, amount: paid, paidAt: end ?? start ?? new Date(), note: "مدفوع (مشروع قديم)" });
+      const added: string[] = [];
+      const people = await team();
+      for (const t of (Array.isArray(a.team) ? (a.team as { person: string; role: string; fee?: number }[]) : [])) {
+        const who = pick(people, t.person, "موظف");
+        const [r] = await db.insert(projectRoles).values({ projectId: p.id, title: t.role, fee: Number(t.fee) || 0, dueDate: end, deliveredAt: status === "IN_PROGRESS" ? null : end, progress: status === "IN_PROGRESS" ? 0 : 100 }).returning();
+        await db.insert(roleMembers).values({ roleId: r.id, userId: who.id, sharePct: 100 });
+        if (status === "CLOSED" && a.team_already_paid !== false && Number(t.fee) > 0)
+          await db.insert(payouts).values({ userId: who.id, projectId: p.id, amountEgp: Number(t.fee), paidAt: end ?? new Date(), note: "مشروع قديم (اتصرف قبل السيستم)" });
+        added.push(`${who.name} (${t.role})`);
+      }
+      const kind = s("files_kind") || "FINAL";
+      const stored = await storeFiles(files, u, kind === "FINAL" ? { projectId: p.id, kind } : { clientId: cl.id, kind: kind.replace("CLIENT_", "") });
+      revalidatePath("/projects"); revalidatePath("/clients"); revalidatePath("/finance");
+      return { client: cl.name, project: p.name, status: STATUS[status], paid: paid ?? 0, currency: cur, team: added, files: stored, link: `/projects/${p.id}`,
+        note: added.length && status === "CLOSED" ? (a.team_already_paid === false ? "أجور الفريق متسجلة كمستحقة لسه ما اتصرفتش." : "أجور الفريق اتسجلت إنها اتصرفت.") : undefined };
+    }
+    case "attach_files": {
+      if (!files.some((f) => !f.used)) return { error: "مفيش ملفات مرفقة في الرسالة دي." };
+      if (s("target") === "project") { const p = pick(await allProjects(), s("name")!, "مشروع"); return { project: p.name, files: await storeFiles(files, u, { projectId: p.id, kind: "FINAL" }) }; }
+      const c = pick(await allClients(), s("name")!, "عميل");
+      return { client: c.name, files: await storeFiles(files, u, { clientId: c.id, kind: ["BRIEF", "CONTRACT"].includes(s("kind") || "") ? s("kind")! : "OTHER" }) };
+    }
+    case "record_expense": {
+      const amount = n("amount_egp");
+      if (!amount || amount <= 0) throw new Error("المبلغ غير صحيح.");
+      await db.insert(expenses).values({ name: s("name")!, amountEgp: amount, category: s("category") || "OTHER", spentAt: s("date") ? new Date(s("date")!) : new Date(), note: s("note") });
+      revalidatePath("/finance");
+      return { recorded: s("name"), amount_egp: amount };
     }
     case "generate_brief": {
       const p = pick(await allProjects(), s("project")!, "مشروع");

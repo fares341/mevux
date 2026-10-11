@@ -30,8 +30,9 @@ export function memberLine(role: RoleIn, userId: string, sharePct: number, r: Ru
 }
 
 export function computeProject(p: ProjectIn, r: Rules) {
-  const revenue = p.price * p.rate;
   const received = p.payments.reduce((a, x) => a + x.amount, 0) * p.rate;
+  // Subscriptions (and any overpayment) earn more than the agreed price: count what was actually received.
+  const revenue = Math.max(p.price * p.rate, received);
   const costs = p.costs.reduce((a, x) => a + x.amountEgp, 0);
   const fund = revenue * p.fundPct / 100;
   const lines = p.roles.flatMap((role) => role.members.map((m) => ({ roleId: role.id, title: role.title, userId: m.userId, sharePct: m.sharePct, ...memberLine(role, m.userId, m.sharePct, r) })));
