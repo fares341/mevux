@@ -8,6 +8,7 @@ import { audit } from "@/lib/audit";
 import { getSettings } from "@/lib/settings";
 import { cairoToDate, fmtCairo } from "@/lib/tz";
 import { cutoff } from "@/lib/finance";
+import { checkFile, saveFile } from "@/lib/storage";
 
 type R = { ok?: string; error?: string };
 const v = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -31,6 +32,14 @@ export async function issueWorkOrder(_: R, fd: FormData): Promise<R> {
   if (!done) return { error: "اكتب إمتى الشغل يعتبر خلص." };
   if (!deadline) return { error: "حدد معاد التسليم (يوم وساعة)." };
   if (deadline < new Date()) return { error: "معاد التسليم لازم يكون بعد دلوقتي." };
+  // Attachments sent with the order (files, images, video, one voice note) become role details.
+  const files = fd.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+  const voice = fd.get("voice");
+  const att = [...files.map((f) => ({ f, v: false })), ...(voice instanceof File && voice.size ? [{ f: voice, v: true }] : [])];
+  if (files.length > 10) return { error: "أقصى حاجة 10 ملفات مع أمر الشغل." };
+  if (att.reduce((a, x) => a + x.f.size, 0) > 50 * 1024 * 1024) return { error: "مجموع الملفات أكبر من 50 ميجا." };
+  for (const { f } of att) { const e = checkFile(f); if (e) return { error: `${f.name}: ${e}` }; }
+  for (const { f, v: isVoice } of att) { const sf = await saveFile(f); await db.insert(roleNotes).values({ roleId: role.id, authorId: admin.id, fileName: sf.name, storedName: sf.stored, size: sf.size, mime: sf.mime, isVoice }); }
   const changed = !!role.issuedAt;
   await db.update(projectRoles).set({
     scope, checklist: JSON.stringify(checklist), checklistDone: changed ? role.checklistDone : "[]", doneDefinition: done,
@@ -38,7 +47,7 @@ export async function issueWorkOrder(_: R, fd: FormData): Promise<R> {
     extStatus: role.extStatus === "PENDING" ? "REJECTED" : role.extStatus,
   }).where(eq(projectRoles.id, role.id));
   const people = await db.select({ userId: roleMembers.userId }).from(roleMembers).where(eq(roleMembers.roleId, role.id));
-  await say(role.projectId, admin.id, `📋 ${changed ? "اتعدّل" : "جديد"}: أمر شغل «${role.title}». التسليم ${fmtCairo(deadline)}. افتح صفحة المشروع واقرا التفاصيل ودوس «استلمت وفهمت».`);
+  await say(role.projectId, admin.id, `📋 ${changed ? "اتعدّل" : "جديد"}: أمر شغل «${role.title}»${att.length ? ` ومعاه ${att.length} مرفق` : ""}. التسليم ${fmtCairo(deadline)}. افتح صفحة المشروع واقرا التفاصيل ودوس «استلمت وفهمت».`);
   await audit(admin.id, "work_order_issue", `${role.id} → ${people.length} people, due ${deadline.toISOString()}`);
   refresh(role.projectId);
   return { ok: changed ? "اتعدّل أمر الشغل واتبعت تاني. الموظف لازم يأكد استلامه من جديد." : "اتبعت أمر الشغل. هيظهرله في صفحة المشروع وفي «النهارده» وفي جروب المشروع." };

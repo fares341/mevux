@@ -1,5 +1,6 @@
 "use client";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
+import { useVoiceNote } from "../work-forms";
 import { issueWorkOrder, acceptWorkOrder, askQuestion, requestExtension, submitWork, reviewWork } from "./work-order-actions";
 type R = { ok?: string; error?: string };
 const Msg = ({ s }: { s: R }) => s?.error ? <div className="msg bad" role="alert">{s.error}</div> : s?.ok ? <div className="msg ok">{s.ok}</div> : null;
@@ -16,6 +17,10 @@ export function Countdown({ to, late }: { to: string; late?: boolean }) {
 
 export function IssueForm({ roleId, init, defaultGrace }: { roleId: string; init: { scope: string; checklist: string; done: string; deadline: string; grace: number; sent: boolean }; defaultGrace: number }) {
   const [s, a, p] = useActionState(issueWorkOrder, {});
+  const [picked, setPicked] = useState<File[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const voice = useVoiceNote();
+  useEffect(() => { if (s?.ok) { setPicked([]); if (fileRef.current) fileRef.current.value = ""; voice.clear(); } }, [s]); // eslint-disable-line react-hooks/exhaustive-deps
   return (<form action={a} className="wo-issue"><Msg s={s} />
     <input type="hidden" name="roleId" value={roleId} />
     <label>المطلوب (التيكت)<textarea name="scope" rows={4} defaultValue={init.scope} required placeholder="اشرح الشغل بالتفصيل: إيه المطلوب، الروابط، أي حاجة لازم يعرفها" /></label>
@@ -27,8 +32,22 @@ export function IssueForm({ roleId, init, defaultGrace }: { roleId: string; init
       <label>معاد التسليم (يوم وساعة)<input type="datetime-local" name="deadline" defaultValue={init.deadline} required /></label>
       <label>وقت السماح بعد المعاد (ساعات)<input type="number" name="graceHours" min={0} max={168} defaultValue={init.sent ? init.grace : defaultGrace} /></label>
     </div>
-    <p className="sub" style={{ margin: "6px 0 10px" }}>الملفات والصور والفويس ضيفها من «تفاصيل الدور» تحت. بعد ما تبعت، الموظف لازم يدوس «استلمت وفهمت»، والخصم بيبدأ يتحسب بعد المعاد + وقت السماح.</p>
-    <button disabled={p}>{p ? "بيتبعت…" : init.sent ? "حفظ التعديل وإعادة الإرسال" : "إرسال أمر الشغل للموظف"}</button>
+    <fieldset className="evidence">
+      <legend>مرفقات مع أمر الشغل</legend>
+      <div className="actions">
+        <label className="btn secondary file-pick">ارفع ملفات أو صور
+          <input ref={fileRef} type="file" name="files" multiple hidden accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.json,.zip,.fig,.n8n" onChange={(e) => setPicked(Array.from(e.target.files || []))} />
+        </label>
+        <button type="button" className={voice.state === "rec" ? "danger" : "ghost"} onClick={voice.toggle}>{voice.state === "rec" ? `إيقاف التسجيل (${voice.secs} ث)` : voice.file ? "سجّل فويس تاني" : "🎤 فويس نوت"}</button>
+        <input type="file" name="voice" hidden ref={voice.input} />
+      </div>
+      {voice.error && <div className="msg bad">{voice.error}</div>}
+      {picked.length > 0 && <ul className="picked">{picked.map((f) => <li key={f.name + f.size}>{f.type.startsWith("image/") ? <img src={URL.createObjectURL(f)} alt="" /> : null}<span>{f.name}</span></li>)}</ul>}
+      {voice.url && <div className="voice-prev"><audio controls src={voice.url} /><button type="button" className="sm ghost" onClick={voice.clear}>شيل الفويس</button></div>}
+      {init.sent && <p className="sub" style={{ margin: "8px 0 0" }}>المرفقات اللي بعتها قبل كده موجودة في «تفاصيل الدور». اللي هترفعه هنا بيتضاف عليها.</p>}
+    </fieldset>
+    <p className="sub" style={{ margin: "0 0 10px" }}>بعد ما تبعت، الموظف لازم يدوس «استلمت وفهمت»، والخصم بيبدأ يتحسب بعد المعاد + وقت السماح.</p>
+    <button disabled={p || voice.state === "rec"}>{p ? "بيتبعت…" : init.sent ? "حفظ التعديل وإعادة الإرسال" : "إرسال أمر الشغل للموظف"}</button>
   </form>);
 }
 

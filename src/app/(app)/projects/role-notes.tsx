@@ -15,7 +15,7 @@ export async function loadRoleNotes(roleIds: string[]) {
 export function RoleNotes({ notes, roleId, admin }: { notes: Note[]; roleId: string; admin: boolean }) {
   const mine = notes.filter((n) => n.roleId === roleId);
   return (<div className="rnotes">
-    <b className="rnotes-h">تفاصيل الدور {mine.length > 0 && <span className="pill info">{mine.length}</span>}</b>
+    <b className="rnotes-h">مرفقات وتفاصيل الدور {mine.length > 0 && <span className="pill info">{mine.length}</span>}</b>
     {!mine.length && <p className="sub" style={{ margin: "4px 0" }}>{admin ? "لسه مفيش تفاصيل. اكتب تيكت أو ارفع ملفات أو سجّل فويس للي ماسك الدور ده." : "لسه مفيش تفاصيل من المدير للدور ده."}</p>}
     {mine.length > 0 && <ul className="rnotes-list">{mine.map((n) => {
       const src = `/api/role-notes/${n.id}`, mime = (n.mime || "").split(";")[0];
