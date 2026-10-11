@@ -24,9 +24,10 @@ export async function createProject(_: R, fd: FormData): Promise<R> {
   const p = z.object({
     name: z.string().trim().min(2, "اكتب اسم المشروع").max(120), client: z.string().trim().min(2, "اختر العميل أو اكتب اسمه").max(120),
     currency: z.enum(["EGP", "SAR", "USD"]), price: money, size: z.enum(["SMALL", "MEDIUM", "LARGE"]),
-    status: z.enum(["MEETING", "BRIEF", "APPROVED", "IN_PROGRESS"]), startDate: date, dueDate: date, description: z.string().max(4000).optional(),
-  }).safeParse({ name: f(fd, "name"), client: f(fd, "client") || (f(fd, "clientId") ? (await db.query.clients.findFirst({ where: eq(clients.id, f(fd, "clientId")!) }))?.name : undefined), currency: f(fd, "currency"), price: f(fd, "price"), size: f(fd, "size"), status: f(fd, "status"), startDate: f(fd, "startDate"), dueDate: f(fd, "dueDate"), description: f(fd, "description") });
+    status: z.enum(["MEETING", "BRIEF", "APPROVED", "IN_PROGRESS"]), billing: z.enum(["ONE_TIME", "SUBSCRIPTION"]).default("ONE_TIME"), monthlyFee: z.coerce.number().min(0).max(1e9).optional(), freeMessages: z.coerce.number().int().min(0).max(1e7).optional(), startDate: date, dueDate: date, description: z.string().max(4000).optional(),
+  }).safeParse({ name: f(fd, "name"), client: f(fd, "client") || (f(fd, "clientId") ? (await db.query.clients.findFirst({ where: eq(clients.id, f(fd, "clientId")!) }))?.name : undefined), currency: f(fd, "currency"), price: f(fd, "price"), size: f(fd, "size"), status: f(fd, "status"), billing: f(fd, "billing"), monthlyFee: f(fd, "monthlyFee"), freeMessages: f(fd, "freeMessages"), startDate: f(fd, "startDate"), dueDate: f(fd, "dueDate"), description: f(fd, "description") });
   if (!p.success) return { error: p.error.issues[0].message };
+  if (p.data.billing === "SUBSCRIPTION" && !p.data.monthlyFee) return { error: "اكتب قيمة الاشتراك الشهري." };
   const clientId = f(fd, "clientId");
   const cl = clientId ? await db.query.clients.findFirst({ where: eq(clients.id, clientId) }) : null;
   const s = await getSettings();
@@ -48,8 +49,8 @@ export async function updateProject(_: R, fd: FormData): Promise<R> {
     name: z.string().trim().min(2).max(120), client: z.string().trim().min(2).max(120), price: money,
     rate: z.coerce.number().positive().max(10000), size: z.enum(["SMALL", "MEDIUM", "LARGE"]),
     status: z.enum(["MEETING", "BRIEF", "APPROVED", "IN_PROGRESS", "DELIVERED", "CLOSED", "CANCELLED"]),
-    startDate: date, dueDate: date, description: z.string().max(4000).optional(),
-  }).safeParse({ name: f(fd, "name"), client: f(fd, "client"), price: f(fd, "price"), rate: f(fd, "rate"), size: f(fd, "size"), status: f(fd, "status"), startDate: f(fd, "startDate"), dueDate: f(fd, "dueDate"), description: f(fd, "description") });
+    billing: z.enum(["ONE_TIME", "SUBSCRIPTION"]).default("ONE_TIME"), monthlyFee: z.coerce.number().min(0).max(1e9).optional(), freeMessages: z.coerce.number().int().min(0).max(1e7).optional(), startDate: date, dueDate: date, description: z.string().max(4000).optional(),
+  }).safeParse({ billing: f(fd, "billing"), monthlyFee: f(fd, "monthlyFee"), freeMessages: f(fd, "freeMessages"), name: f(fd, "name"), client: f(fd, "client"), price: f(fd, "price"), rate: f(fd, "rate"), size: f(fd, "size"), status: f(fd, "status"), startDate: f(fd, "startDate"), dueDate: f(fd, "dueDate"), description: f(fd, "description") });
   if (!p.success) return { error: "راجع البيانات: " + p.error.issues[0].path.join(".") };
   const cur = await db.query.projects.findFirst({ where: eq(projects.id, id) });
   if (!cur) return { error: "المشروع غير موجود." };

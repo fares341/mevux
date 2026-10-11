@@ -24,12 +24,13 @@ export function NewProject({ clients = [], clientId }: { clients?: { id: string;
       <label>البداية<input id="np-start" name="startDate" type="date" /></label>
       <label>موعد التسليم<input id="np-due" name="dueDate" type="date" /></label>
     </div>
+    <BillingFields k="np" d={{}} />
     <label style={{ marginBottom: 14 }}>وصف المشروع<textarea id="np-desc" name="description" /></label>
     <button disabled={p}>إنشاء المشروع</button>
   </form>);
 }
 
-type P = { id: string; name: string; client: string; price: number; rate: number; size: string; status: string; startDate: Date | null; dueDate: Date | null; description: string | null; currency: string };
+type P = { billing?: string; monthlyFee?: number | null; freeMessages?: number | null; id: string; name: string; client: string; price: number; rate: number; size: string; status: string; startDate: Date | null; dueDate: Date | null; description: string | null; currency: string };
 export function EditProject({ p }: { p: P }) {
   const [s, a, pend] = useActionState(updateProject, {});
   return (<form action={a}><Msg s={s} /><input type="hidden" name="id" value={p.id} />
@@ -46,6 +47,7 @@ export function EditProject({ p }: { p: P }) {
       <label>البداية<input id="ep-start" name="startDate" type="date" defaultValue={d(p.startDate)} /></label>
       <label>موعد التسليم<input id="ep-due" name="dueDate" type="date" defaultValue={d(p.dueDate)} /></label>
     </div>
+    <BillingFields k="ep" d={{ billing: p.billing, monthlyFee: p.monthlyFee, freeMessages: p.freeMessages }} />
     <label style={{ marginBottom: 14 }}>وصف المشروع<textarea id="ep-desc" name="description" defaultValue={p.description || ""} /></label>
     <p className="sub" style={{ marginTop: 0 }}>اختيار <b>مقفول ومدفوع</b> يعني إن العميل استلم ووافق ودفع، وساعتها مستحقات الفريق تتحسب ويبقى ينفع تصرفها.</p>
     <button disabled={pend}>حفظ</button>
@@ -146,4 +148,16 @@ export function RespondForm({ id }: { id: string }) {
     <textarea id={"resp-" + id} name="response" placeholder="ردك على الخصم" required />
     <button className="sm" style={{ marginTop: 6 }} disabled={p}>إرسال الرد</button>
   </form>);
+}
+
+function BillingFields({ k, d }: { k: string; d: { billing?: string; monthlyFee?: number | null; freeMessages?: number | null } }) {
+  const [b, setB] = useState(d.billing || "ONE_TIME");
+  return (<div className="row">
+    <label>نوع التعاقد<select id={k + "-billing"} name="billing" value={b} onChange={(e) => setB(e.target.value)}>
+      <option value="ONE_TIME">تنفيذ + خدمات تشغيل منفصلة</option><option value="SUBSCRIPTION">اشتراك شهري ثابت</option></select></label>
+    {b === "SUBSCRIPTION" && <>
+      <label>الاشتراك الشهري<small>بنفس عملة المشروع · السعر فوق = رسوم التأسيس (ممكن صفر)</small><input id={k + "-monthly"} name="monthlyFee" type="number" min="0" step="0.01" dir="ltr" defaultValue={d.monthlyFee ?? ""} required /></label>
+      <label>رسائل واتساب المجانية شهرياً<small>بعدها العميل يدفع لميتا مباشرة</small><input id={k + "-free"} name="freeMessages" type="number" min="0" dir="ltr" defaultValue={d.freeMessages ?? 1000} /></label>
+    </>}
+  </div>);
 }

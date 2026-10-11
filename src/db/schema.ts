@@ -77,6 +77,12 @@ export const projects = pgTable("projects", {
   fundPct: numeric("fund_pct", { precision: 5, scale: 2, mode: "number" }).notNull(),
   ownerPct: numeric("owner_pct", { precision: 5, scale: 2, mode: "number" }).notNull(),
   teamCapPct: numeric("team_cap_pct", { precision: 5, scale: 2, mode: "number" }).notNull(),
+  // ONE_TIME: implementation fee, running services billed separately (e.g. Walid).
+  // SUBSCRIPTION: fixed monthly fee that covers running costs; client pays Meta for messages beyond the free tier,
+  // and any extra AI token usage is added to the subscription.
+  billing: text("billing").notNull().default("ONE_TIME"),
+  monthlyFee: numeric("monthly_fee", { precision: 12, scale: 2, mode: "number" }),
+  freeMessages: integer("free_messages").default(1000),
   startDate: timestamp("start_date", { withTimezone: true }),
   dueDate: timestamp("due_date", { withTimezone: true }),
   closedAt: timestamp("closed_at", { withTimezone: true }),
@@ -301,8 +307,32 @@ export const projectBriefs = pgTable("project_briefs", {
   id: id(),
   projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   lang: text("lang").notNull(),
+  version: integer("version").notNull().default(1),
+  parentId: text("parent_id"),
+  instruction: text("instruction"),
+  contentJson: text("content_json"),
+  optsJson: text("opts_json"),
   storedName: text("stored_name").notNull().unique(),
   size: integer("size").notNull(),
   createdBy: text("created_by"),
   createdAt: created(),
+});
+
+// ===== Project group chat (members of the project + admin) =====
+export const projectMessages = pgTable("project_messages", {
+  id: id(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id),
+  text: text("text").notNull().default(""),
+  fileName: text("file_name"),
+  storedName: text("stored_name"),
+  fileSize: integer("file_size"),
+  mime: text("mime"),
+  createdAt: created(),
+});
+export const chatReads = pgTable("chat_reads", {
+  id: id(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  lastReadAt: timestamp("last_read_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -4,7 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { db, projects, projectBriefs, suppliers } from "@/lib/db";
 import { BILLING } from "@/lib/labels";
 import { STATUS } from "@/lib/projects";
-import { BriefForm } from "../projects/brief-ui";
+import { BriefForm, ReviseForm } from "../projects/brief-ui";
 import { deleteBrief } from "../projects/brief-actions";
 
 const CUR: Record<string, string> = { EGP: "ج", SAR: "ريال", USD: "$" };
@@ -19,6 +19,10 @@ export default async function Briefs({ searchParams }: { searchParams: Promise<{
     db.select().from(suppliers).orderBy(asc(suppliers.provider)),
   ]);
   const chosen = ps.find((p) => p.id === sp.project);
+  // Group versions of the same brief, newest version first.
+  const byRoot = new Map<string, typeof all>();
+  for (const x of all) { const k = x.b.parentId ?? x.b.id; byRoot.set(k, [...(byRoot.get(k) ?? []), x]); }
+  const groups = [...byRoot.values()].map((g) => g.sort((a, b) => b.b.version - a.b.version)).sort((a, b) => +b[0].b.createdAt - +a[0].b.createdAt);
   return (<>
     <div className="head"><div><span className="tag">العمل</span><h1>البريفات</h1><p className="sub">اعمل بريف PDF لأي مشروع بالعربي أو الإنجليزي، وكل البريفات اللي اتعملت قبل كده هنا.</p></div></div>
 
@@ -39,12 +43,17 @@ export default async function Briefs({ searchParams }: { searchParams: Promise<{
     </section>
 
     <section className="card plain"><h2>كل البريفات</h2>
-      {all.length ? <div className="table-wrap"><table>
-        <thead><tr><th>المشروع</th><th>العميل</th><th>اللغة</th><th>اتعمل</th><th></th></tr></thead>
-        <tbody>{all.map(({ b, project, client }) => <tr key={b.id}>
-          <td><Link href={`/projects/${b.projectId}`}>{project}</Link></td><td>{client}</td><td>{b.lang === "ar" ? "عربي" : "English"}</td><td className="sub">{when(b.createdAt)}</td>
-          <td className="actions"><a className="btn" href={`/api/briefs/${b.id}`} target="_blank" rel="noopener">فتح PDF</a><form action={deleteBrief}><input type="hidden" name="id" value={b.id} /><button className="sm ghost">حذف</button></form></td></tr>)}</tbody>
-      </table></div> : <p className="sub">لسه مفيش بريفات.</p>}
+      {groups.length ? groups.map((g) => { const latest = g[0]; return (
+        <div key={latest.b.parentId ?? latest.b.id} style={{ borderBottom: "1px solid var(--line)", paddingBlock: 12 }}>
+          <div className="actions" style={{ justifyContent: "space-between" }}>
+            <span><Link href={`/projects/${latest.b.projectId}`}><b>{latest.project}</b></Link> · {latest.client} · {latest.b.lang === "ar" ? "عربي" : "English"} · <span className="pill info">نسخة {latest.b.version}</span></span>
+            <span className="actions"><a className="btn" href={`/api/briefs/${latest.b.id}`} target="_blank" rel="noopener">فتح آخر نسخة</a><form action={deleteBrief}><input type="hidden" name="id" value={latest.b.id} /><button className="sm ghost">حذف النسخة</button></form></span>
+          </div>
+          <details style={{ marginTop: 8 }}><summary>عدّل البريف بالكلام أو بالفويس</summary><ReviseForm id={latest.b.id} /></details>
+          {g.length > 1 && <details style={{ marginTop: 6 }}><summary>النسخ القديمة ({g.length - 1})</summary>
+            {g.slice(1).map(({ b }) => <div key={b.id} className="sub" style={{ marginTop: 6 }}><a href={`/api/briefs/${b.id}`} target="_blank" rel="noopener">نسخة {b.version}</a> · {when(b.createdAt)}{b.instruction ? ` · "${b.instruction.slice(0, 90)}"` : ""}</div>)}
+          </details>}
+        </div>); }) : <p className="sub">لسه مفيش بريفات.</p>}
     </section>
   </>);
 }

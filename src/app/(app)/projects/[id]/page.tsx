@@ -35,7 +35,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     if (!p || (!(ACTIVE as readonly string[]).includes(p.status) && !mine)) notFound();
     const files = mine ? await loadFiles(p.id) : [];
     return (<>
-      <div className="head"><div><span className="tag">{STATUS[p.status]}</span><h1>{p.name}</h1><p className="sub">{p.client} · التسليم {fmt(p.dueDate)}</p></div></div>
+      <div className="head"><div><span className="tag">{STATUS[p.status]}</span><h1>{p.name}</h1><p className="sub">{p.client} · التسليم {fmt(p.dueDate)}</p></div>{mine && <Link className="btn" href={`/chats/${p.id}`}>شات المشروع</Link>}</div>
       {p.description && <div className="note" style={{ whiteSpace: "pre-wrap" }}>{p.description}</div>}
       {p.roles.map((r) => { const own = r.members.some((m) => m.userId === me.id); return (
         <section className="card" key={r.id} style={own ? { borderTopColor: "var(--cyan)" } : undefined}>
@@ -68,8 +68,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const allDeds = p.roles.flatMap((ro) => ro.deductions.map((dd) => ({ ...dd, role: ro.title })));
 
   return (<>
-    <div className="head"><div><span className="tag">{STATUS[p.status]} · {SIZE[p.size]}</span><h1>{p.name}</h1><p className="sub">{p.client} · <span className="num">{egp(p.price)}</span> {CUR[p.currency]}{p.currency !== "EGP" && <> × <span className="num">{p.rate}</span></>}</p></div>
-      <Link className="btn" style={{ background: "var(--pink)" }} href={`/briefs?project=${p.id}`}>عمل بريف</Link></div>
+    <div className="head"><div><span className="tag">{STATUS[p.status]} · {SIZE[p.size]}</span><h1>{p.name}</h1><p className="sub">{p.client} · <span className="num">{egp(p.price)}</span> {CUR[p.currency]}{p.currency !== "EGP" && <> × <span className="num">{p.rate}</span></>}{p.billing === "SUBSCRIPTION" && <> · <span className="pill info">اشتراك <span className="num">{egp(p.monthlyFee ?? 0)}</span> {CUR[p.currency]} / شهر</span></>}</p></div>
+      <div className="actions"><Link className="btn ghost-link" href={`/chats/${p.id}`}>شات المشروع</Link><Link className="btn" style={{ background: "var(--pink)" }} href={`/briefs?project=${p.id}`}>عمل بريف</Link></div></div>
 
     <div className="grid">
       <div className="stat"><b className="num">{egp(c.revenue)}</b><span>قيمة المشروع (ج)</span></div>
