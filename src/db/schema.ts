@@ -244,3 +244,54 @@ export const installments = pgTable("installments", {
   sort: integer("sort").notNull().default(0),
   createdAt: created(),
 });
+
+// ===== Phase 3: tasks, updates, complaints =====
+export const taskStatus = pgEnum("task_status", ["TODO", "DOING", "REVIEW", "DONE", "BLOCKED"]);
+export const tasks = pgTable("tasks", {
+  id: id(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  roleId: text("role_id").references(() => projectRoles.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  details: text("details"),
+  assigneeId: text("assignee_id").references(() => users.id),
+  status: taskStatus("status").notNull().default("TODO"),
+  dueDate: timestamp("due_date", { withTimezone: true }),
+  createdBy: text("created_by"),
+  doneAt: timestamp("done_at", { withTimezone: true }),
+  createdAt: created(),
+});
+
+// Daily progress notes (from the web or the assistant).
+export const updates = pgTable("updates", {
+  id: id(),
+  userId: text("user_id").notNull().references(() => users.id),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  text: text("text").notNull(),
+  source: text("source").notNull().default("WEB"),
+  createdAt: created(),
+});
+
+export const complaintStatus = pgEnum("complaint_status", ["OPEN", "ANSWERED", "RESOLVED", "DISMISSED", "DEDUCTED"]);
+export const complaints = pgTable("complaints", {
+  id: id(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  reporterId: text("reporter_id").notNull().references(() => users.id), // visible to the admin only
+  againstId: text("against_id").notNull().references(() => users.id),
+  text: text("text").notNull(),
+  evidence: text("evidence"),
+  response: text("response"),
+  respondedAt: timestamp("responded_at", { withTimezone: true }),
+  status: complaintStatus("status").notNull().default("OPEN"),
+  decisionNote: text("decision_note"),
+  deductionId: text("deduction_id"),
+  createdAt: created(),
+});
+
+// ===== Phase 4: assistant =====
+export const assistantMessages = pgTable("assistant_messages", {
+  id: id(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role: text("role").notNull(), // user | assistant
+  content: text("content").notNull(),
+  createdAt: created(),
+});

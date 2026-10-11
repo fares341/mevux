@@ -108,3 +108,13 @@ a.btn.ghost-link:hover { background: var(--pale); color: var(--navy); }
 .pipeline .step.past { border-bottom-color: var(--cyan); background: var(--pale); }
 .pipeline .step.on { border-color: var(--blue); border-bottom-color: var(--blue); background: var(--light); }
 a.step:hover { border-color: var(--blue); }
+
+/* Assistant chat */
+.chat { display: flex; flex-direction: column; gap: 12px; }
+.chat .msgs { min-height: 340px; max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px; }
+.bubble { max-width: 80%; padding: 10px 14px; border-radius: 10px; white-space: pre-wrap; line-height: 1.8; font-size: 14px; }
+.bubble.user { align-self: flex-start; background: var(--navy); color: #fff; border-bottom-right-radius: 3px; }
+.bubble.assistant { align-self: flex-end; background: var(--pale); border: 1px solid var(--line); border-bottom-left-radius: 3px; }
+.bubble.typing { color: var(--muted); }
+.hints { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.composer { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
