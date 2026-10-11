@@ -142,6 +142,7 @@ export async function togglePaid(fd: FormData) {
         const toEgp = (c: string) => (c === "SAR" ? Number(s.rateSAR) : c === "USD" ? Number(s.rateUSD) : 1);
         const amount = it.currency === pr.currency ? it.amount : (it.amount * toEgp(it.currency)) / pr.rate;
         paymentId = (await db.insert(projectPayments).values({ projectId: pr.id, amount: Math.round(amount * 100) / 100, note: it.label }).returning())[0].id;
+        await (await import("@/lib/subscriptions")).advanceAfterPayment(pr.id);
       }
     }
     await db.update(installments).set({ paidAt: new Date(), paymentId }).where(eq(installments.id, it.id));

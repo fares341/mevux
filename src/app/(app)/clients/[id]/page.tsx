@@ -9,6 +9,7 @@ import { STATUS } from "@/lib/projects";
 import { egp } from "@/lib/finance";
 import { StageLog, EditClient, ClientFileForm, InstallmentForm } from "../forms";
 import { deleteClient, deleteClientFile, deleteInstallment, togglePaid } from "../actions";
+import { ClientAssets } from "../../projects/assets";
 
 const CUR: Record<string, string> = { EGP: "ج", SAR: "ريال", USD: "$" };
 const KIND: Record<string, string> = { BRIEF: "بريف", CONTRACT: "عقد", OTHER: "ملف" };
@@ -73,6 +74,8 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
         {e.note && <p style={{ margin: "4px 0", whiteSpace: "pre-wrap" }}>{e.note}</p>}
       </div>)}
     </section>
+
+    <ClientAssets clientId={c.id} />
 
     <section className="card"><h2>المشاريع</h2>
       {ps.length ? ps.map((p) => <div key={p.id}><Link href={`/projects/${p.id}`}><b>{p.name}</b></Link> · {STATUS[p.status]} · <span className="num">{egp(p.price)}</span> {CUR[p.currency]}</div>) : <p className="sub">مفيش مشاريع لسه.</p>}

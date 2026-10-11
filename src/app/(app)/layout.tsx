@@ -7,10 +7,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const u = await requireUser();
   const admin = u.role === "ADMIN";
   const unread = (await chatProjects(u)).reduce((a, p) => a + p.unread, 0);
+  const dueSubs = admin ? (await (await import("@/lib/subscriptions")).dueSubscriptions()).length : 0;
   const groups = [
     { title: "العمل", items: [{ href: "/", label: "الرئيسية" }, { href: "/assistant", label: "المساعد" }, ...(admin ? [{ href: "/clients", label: "العملاء" }] : []), { href: "/projects", label: "المشاريع" }, ...(admin ? [{ href: "/briefs", label: "البريفات" }] : []), { href: "/chats", label: unread ? `محادثات المشاريع (${unread})` : "محادثات المشاريع" }, { href: "/tasks", label: "المهام" }, { href: "/follow", label: "المتابعة اليومية" }, { href: "/complaints", label: "الشكاوى" }] },
     ...(admin ? [{ title: "الإدارة", items: [
-      { href: "/finance", label: "المالية" },
+      { href: "/finance", label: dueSubs ? `المالية (${dueSubs} اشتراك مستحق)` : "المالية" },
       { href: "/team", label: "الموظفون" },
       { href: "/suppliers", label: "الموردون والخدمات" },
       { href: "/settings", label: "الإعدادات" },

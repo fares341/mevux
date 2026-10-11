@@ -1,6 +1,6 @@
 import "server-only";
 import { asc, desc, eq } from "drizzle-orm";
-import { db, users, clients, clientEvents, projects, installments, suppliers, bans, projectPayments, projectRoles, roleMembers, projectFiles, clientFiles, expenses, payouts } from "./db";
+import { db, users, clients, clientEvents, projects, installments, suppliers, bans, projectPayments, projectRoles, roleMembers, projectFiles, clientFiles, expenses, payouts, projectAssets } from "./db";
 import type { Pending } from "./assistant-tools";
 import type { SessionUser } from "./auth";
 import type { ToolDef } from "./ai";
@@ -60,6 +60,17 @@ export const ADMIN_TOOLS: ToolDef[] = [
   }, ["client", "project", "price", "currency", "status"]),
   fn("attach_files", "Store the files sent in this message on a project (final files) or in a client's file.", { target: E(["project", "client"], "where"), name: S("project or client name"), kind: E(["FINAL", "BRIEF", "CONTRACT", "OTHER"], "file type") }, ["target", "name"]),
   fn("record_expense", "Record a company expense (EGP) such as ads, tools, salaries.", { name: S("what"), amount_egp: N("EGP"), category: E(["ADS", "TOOLS", "SALARIES", "OTHER"], "category"), date: S("YYYY-MM-DD, default today"), note: S("note") }, ["name", "amount_egp"]),
+  fn("update_project", "Edit any project (also finished ones): link it to a client, change contract, subscription fee, next payment date and reminder, work types, dates, price, status or description. Only send fields to change.", {
+    project: S("project name"), client: S("link to this existing client"), billing: E(["ONE_TIME", "SUBSCRIPTION"], "contract type"), monthly_fee: N("monthly subscription"),
+    next_due_date: S("next subscription payment date YYYY-MM-DD"), reminder_days: N("days before the due date to alert"),
+    kinds: { type: "array", items: { type: "string", enum: ["AUTOMATION", "CHATBOT", "WEBSITE", "APP", "SAAS", "DASHBOARD"] }, description: "work types" },
+    price: N("price"), start_date: S("YYYY-MM-DD"), due_date: S("YYYY-MM-DD"), status: E(Object.keys(STATUS), "status"), description: S("description"),
+  }, ["project"]),
+  fn("add_project_asset", "Add a website, app, SaaS, server or domain to a project with its details and cost. Shows in the project, the client's file and the brief.", {
+    project: S("project name"), kind: E(["WEBSITE", "APP", "SAAS", "SERVER", "DOMAIN", "OTHER"], "type"), name: S("name"), url: S("url / domain"), provider: S("provider / tech"), details: S("details: pages, features, specs"),
+    cost: N("cost"), currency: CUR, billing: E(["MONTHLY", "YEARLY", "ONE_TIME"], "billing"), paid_by: E(["CLIENT", "US", "INCLUDED"], "who pays"), renews_at: S("renewal date YYYY-MM-DD"), in_brief: { type: "boolean", description: "show in the brief (default true)" },
+  }, ["project", "kind", "name"]),
+  fn("subscriptions_due", "Subscriptions whose payment is due soon or overdue.", {}),
   fn("generate_brief", "Generate a client brief PDF for a project. Takes about a minute.", { project: S("project name"), lang: E(["ar", "en"], "language"), context: S("everything known about the client and the need") }, ["project"]),
 ];
 
@@ -253,6 +264,35 @@ export async function runAdminTool(name: string, a: Record<string, unknown>, u: 
       await db.insert(expenses).values({ name: s("name")!, amountEgp: amount, category: s("category") || "OTHER", spentAt: s("date") ? new Date(s("date")!) : new Date(), note: s("note") });
       revalidatePath("/finance");
       return { recorded: s("name"), amount_egp: amount };
+    }
+    case "update_project": {
+      const p = pick(await allProjects(), s("project")!, "مشروع");
+      const set: Partial<typeof projects.$inferInsert> = {};
+      if (s("client")) { const c = pick(await allClients(), s("client")!, "عميل"); set.clientId = c.id; set.client = c.name; }
+      if (s("billing")) set.billing = s("billing");
+      if (n("monthly_fee") !== undefined) set.monthlyFee = n("monthly_fee");
+      if (s("next_due_date")) set.nextDueDate = new Date(s("next_due_date")!);
+      if (n("reminder_days") !== undefined) set.reminderDays = Math.max(0, Math.min(30, n("reminder_days")!));
+      if (Array.isArray(a.kinds)) set.kinds = (a.kinds as string[]).join(",") || null;
+      if (n("price") !== undefined) set.price = n("price");
+      if (s("start_date")) set.startDate = new Date(s("start_date")!);
+      if (s("due_date")) set.dueDate = new Date(s("due_date")!);
+      if (s("status")) { set.status = s("status") as typeof p.status; set.closedAt = set.status === "CLOSED" ? (p.closedAt ?? new Date()) : null; }
+      if (s("description")) set.description = s("description");
+      if (!Object.keys(set).length) throw new Error("مفيش حاجة اتطلب تتغير.");
+      await db.update(projects).set(set).where(eq(projects.id, p.id));
+      revalidatePath(`/projects/${p.id}`); revalidatePath("/projects"); revalidatePath("/finance"); revalidatePath("/clients"); revalidatePath("/");
+      return { project: p.name, changed: Object.keys(set), link: `/projects/${p.id}` };
+    }
+    case "add_project_asset": {
+      const p = pick(await allProjects(), s("project")!, "مشروع");
+      await db.insert(projectAssets).values({ projectId: p.id, kind: s("kind")!, name: s("name")!, url: s("url"), provider: s("provider"), details: s("details"), cost: n("cost") ?? null, currency: s("currency") || "EGP", billing: s("billing") || "MONTHLY", paidBy: s("paid_by") || "CLIENT", renewsAt: s("renews_at") ? new Date(s("renews_at")!) : null, inBrief: a.in_brief !== false });
+      revalidatePath(`/projects/${p.id}`);
+      return { project: p.name, added: s("name"), link: `/projects/${p.id}` };
+    }
+    case "subscriptions_due": {
+      const { dueSubscriptions } = await import("./subscriptions");
+      return (await dueSubscriptions()).map((x) => ({ project: x.name, client: x.client, fee: x.fee, currency: x.currency, due: x.due.toISOString().slice(0, 10), status: x.overdue ? `متأخر ${-x.days} يوم` : `بعد ${x.days} يوم` }));
     }
     case "generate_brief": {
       const p = pick(await allProjects(), s("project")!, "مشروع");

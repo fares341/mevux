@@ -19,6 +19,7 @@ export default async function Home() {
       <div className="stat"><b>{supplierCount}</b><span>خدمة مسجلة عند الموردين</span></div>
       <div className="stat"><b className="num">{fixed.toLocaleString("en-US")} ج</b><span>المصاريف الثابتة شهرياً</span></div>
     </div>}
+    {admin && <SubscriptionAlerts />}
     {admin && <GettingStarted />}
     {admin && <FollowUps />}
   </>);
@@ -62,5 +63,20 @@ async function GettingStarted() {
       <div><b>{x.title}</b><span className="sub" style={{ display: "block", margin: 0 }}>{x.why}</span></div>
       {!x.done && <Link className="btn ghost-link" href={x.href}>{x.cta}</Link>}
     </li>)}</ol>
+  </section>);
+}
+
+async function SubscriptionAlerts() {
+  const { dueSubscriptions } = await import("@/lib/subscriptions");
+  const due = await dueSubscriptions();
+  if (!due.length) return null;
+  const CUR: Record<string, string> = { EGP: "ج", SAR: "ريال", USD: "$" };
+  return (<section className="card" style={{ borderTopColor: due.some((x) => x.overdue) ? "var(--bad)" : "var(--warn)" }}>
+    <h2>مواعيد دفع الاشتراكات</h2>
+    {due.map((x) => <div key={x.id} className="actions" style={{ justifyContent: "space-between", borderBottom: "1px solid var(--line)", paddingBlock: 8 }}>
+      <span><Link href={`/projects/${x.id}`}><b>{x.name}</b></Link> · {x.client} · <span className="num">{x.fee.toLocaleString("en-US")}</span> {CUR[x.currency]}</span>
+      <span className={"pill " + (x.overdue ? "bad" : "warn")}>{x.overdue ? `متأخر ${-x.days} يوم` : x.days === 0 ? "النهارده" : `بعد ${x.days} يوم`} · {x.due.toLocaleDateString("ar-EG", { day: "numeric", month: "short" })}</span>
+    </div>)}
+    <p className="sub">لما الدفعة توصل سجّلها في المشروع، والميعاد بيتنقل للشهر الجاي لوحده.</p>
   </section>);
 }

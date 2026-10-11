@@ -63,10 +63,11 @@ export default async function Finance() {
 
     <section className="card"><h2>الاشتراكات الشهرية · <span className="num">{egp(cf.mrr)}</span> ج في الشهر</h2>
       {cf.subs.length ? <div className="table-wrap"><table>
-        <thead><tr><th>المشروع</th><th>العميل</th><th>الاشتراك</th><th>بالجنيه</th><th>الشهر ده</th><th>آخر دفعة</th><th>إجمالي اللي دفعه</th></tr></thead>
+        <thead><tr><th>المشروع</th><th>العميل</th><th>الاشتراك</th><th>بالجنيه</th><th>الشهر ده</th><th>الميعاد الجاي</th><th>آخر دفعة</th><th>إجمالي اللي دفعه</th></tr></thead>
         <tbody>{cf.subs.map((x) => <tr key={x.id}><td><Link href={`/projects/${x.id}`}><b>{x.name}</b></Link></td><td>{x.client}</td>
           <td><span className="num">{egp(x.fee)}</span> {CURS[x.currency]}</td><td className="num">{egp(x.feeEgp)}</td>
           <td>{x.paidThisMonth ? <span className="pill ok">دفع</span> : <span className="pill bad">لسه</span>}</td>
+          <td>{x.nextDue ? (() => { const d = Math.round((+new Date(x.nextDue).setHours(0, 0, 0, 0) - +new Date().setHours(0, 0, 0, 0)) / 864e5); return <span className={"pill " + (d < 0 ? "bad" : d <= x.reminderDays ? "warn" : "info")}>{new Date(x.nextDue).toLocaleDateString("ar-EG", { day: "numeric", month: "short" })}{d < 0 ? ` · متأخر ${-d} يوم` : d <= x.reminderDays ? ` · بعد ${d} يوم` : ""}</span>; })() : <Link href={`/projects/${x.id}`} className="sub">حدد الميعاد</Link>}</td>
           <td className="sub">{x.lastPaid ? x.lastPaid.toLocaleDateString("ar-EG") : "—"}</td><td className="num">{egp(x.totalEgp)}</td></tr>)}</tbody></table></div>
         : <p className="sub">مفيش مشاريع باشتراك شهري. اختار "اشتراك شهري ثابت" في نوع التعاقد لما تعمل المشروع.</p>}
       <p className="sub">دفعة الاشتراك بتتسجل من صفحة المشروع (دفعات العميل) أو قول للمساعد: "شركة الأمل دفعت اشتراك الشهر".</p>

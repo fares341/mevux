@@ -83,6 +83,9 @@ export const projects = pgTable("projects", {
   billing: text("billing").notNull().default("ONE_TIME"),
   monthlyFee: numeric("monthly_fee", { precision: 12, scale: 2, mode: "number" }),
   freeMessages: integer("free_messages").default(1000),
+  nextDueDate: timestamp("next_due_date", { withTimezone: true }), // next subscription payment, set by the owner
+  reminderDays: integer("reminder_days").notNull().default(3),
+  kinds: text("kinds"), // comma list: AUTOMATION,CHATBOT,WEBSITE,APP,SAAS,DASHBOARD
   startDate: timestamp("start_date", { withTimezone: true }),
   dueDate: timestamp("due_date", { withTimezone: true }),
   closedAt: timestamp("closed_at", { withTimezone: true }),
@@ -345,4 +348,22 @@ export const expenses = pgTable("expenses", {
   amountEgp: numeric("amount_egp", { precision: 12, scale: 2, mode: "number" }).notNull(),
   spentAt: timestamp("spent_at", { withTimezone: true }).notNull().defaultNow(),
   note: text("note"),
+});
+
+// Websites, apps, SaaS, servers, domains… that belong to a project (non-secret details; logins live in credentials).
+export const projectAssets = pgTable("project_assets", {
+  id: id(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // WEBSITE | APP | SAAS | SERVER | DOMAIN | OTHER
+  name: text("name").notNull(),
+  url: text("url"),
+  provider: text("provider"),
+  details: text("details"),
+  cost: numeric("cost", { precision: 12, scale: 2, mode: "number" }),
+  currency: text("currency").notNull().default("EGP"),
+  billing: text("billing").notNull().default("MONTHLY"), // MONTHLY | YEARLY | ONE_TIME
+  paidBy: text("paid_by").notNull().default("CLIENT"), // CLIENT | US | INCLUDED
+  renewsAt: timestamp("renews_at", { withTimezone: true }),
+  inBrief: boolean("in_brief").notNull().default(true),
+  createdAt: created(),
 });

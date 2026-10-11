@@ -34,6 +34,7 @@ export async function cashflow(monthsBack = 12) {
   const subs = ps.filter((p) => p.billing === "SUBSCRIPTION" && p.status !== "CANCELLED").map((p) => {
     const mine = pays.filter((x) => x.projectId === p.id).sort((a, b) => +b.paidAt - +a.paidAt);
     return { id: p.id, name: p.name, client: p.client, currency: p.currency, fee: p.monthlyFee ?? 0, feeEgp: (p.monthlyFee ?? 0) * p.rate,
+      nextDue: p.nextDueDate, reminderDays: p.reminderDays,
       paidThisMonth: mine.some((x) => mkey(x.paidAt) === thisMonth), lastPaid: mine[0]?.paidAt ?? null, totalEgp: mine.reduce((a, x) => a + x.amount * p.rate, 0) };
   });
   return { months: shown, subs, mrr: subs.reduce((a, s) => a + s.feeEgp, 0), fixedMonthly, exps: exps.sort((a, b) => +b.spentAt - +a.spentAt).slice(0, 30) };

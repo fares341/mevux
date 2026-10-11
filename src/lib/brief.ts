@@ -3,9 +3,9 @@ import { readFile } from "fs/promises";
 import path from "path";
 import { z } from "zod";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { db, projects, projectRoles, clients, clientEvents, installments, suppliers } from "./db";
+import { db, projects, projectRoles, clients, clientEvents, installments, suppliers, projectAssets } from "./db";
 import { chat } from "./ai";
-import { BILLING } from "./labels";
+import { BILLING, KINDS, KINDS_EN, ASSET_KINDS, ASSET_KINDS_EN, PAID_BY, PAID_BY_EN } from "./labels";
 
 export type Lang = "ar" | "en";
 
@@ -22,12 +22,13 @@ export async function briefFacts(projectId: string, opts: BriefOpts | string[]) 
     db.select().from(installments).where(and(eq(installments.projectId, p.id))).orderBy(asc(installments.sort)),
     supplierIds.length ? db.select().from(suppliers).where(inArray(suppliers.id, supplierIds)) : Promise.resolve([]),
   ]);
+  const assets = await db.select().from(projectAssets).where(and(eq(projectAssets.projectId, p.id), eq(projectAssets.inBrief, true))).orderBy(asc(projectAssets.createdAt));
   const notes = client ? await db.select().from(clientEvents).where(eq(clientEvents.clientId, client.id)).orderBy(desc(clientEvents.createdAt)).limit(15) : [];
   const weeks = p.startDate && p.dueDate ? Math.max(1, Math.round((+p.dueDate - +p.startDate) / (7 * 864e5))) : null;
   const { getSettings } = await import("./settings");
   const st = await getSettings();
   const rate = (c: string) => (c === "SAR" ? Number(st.rateSAR) : c === "USD" ? Number(st.rateUSD) : 1);
-  return { p, roles, client, plan, sups, notes, weeks, usageEstimate: o.usageEstimate, opsNote: o.opsNote?.trim() || "", rate };
+  return { p, roles, client, plan, sups, notes, weeks, assets, usageEstimate: o.usageEstimate, opsNote: o.opsNote?.trim() || "", rate };
 }
 export type Facts = Awaited<ReturnType<typeof briefFacts>>;
 
@@ -56,6 +57,8 @@ export async function writeBrief(f: Facts, lang: Lang, extra: string): Promise<B
   const facts = {
     project: f.p.name, client: f.client?.name ?? f.p.client, company: f.client?.company, country: f.client?.country, need: f.client?.need,
     description: f.p.description, size: f.p.size, durationWeeks: f.weeks,
+    workTypes: (f.p.kinds || "").split(",").filter(Boolean).map((k) => KINDS_EN[k]),
+    systemsInScope: f.assets.map((x) => ({ type: ASSET_KINDS_EN[x.kind], name: x.name, tech: x.provider, details: x.details })),
     contract: f.p.billing === "SUBSCRIPTION" ? "monthly subscription that includes running costs" : "one-time implementation fee; running services billed separately",
     roles: f.roles.map((r) => ({ role: r.title, scope: r.scope, deliverables: r.deliverables })),
     paymentMilestones: f.plan.map((x) => ({ label: x.label, when: x.dueNote })),
@@ -77,6 +80,7 @@ Return ONLY one JSON object with these keys:
 - planLead: one sentence about phased delivery.
 - scope: one sentence summarising the full scope.
 Rules:
+- If systemsInScope lists websites, apps, SaaS or servers, describe them in the tracks with their details (pages, features, tech).
 - Use EVERY concrete fact and number the owner gave about the client (counts, percentages, tools they use, branch names, costs they currently pay). Specific beats generic.
 - Never invent numbers. Never write MEVIX prices, fees, payment amounts or dates: they are inserted from the system.
 - No filler, no marketing clichés. Respect the length limits.`;
@@ -118,6 +122,7 @@ const L = {
     output: "مخرج التسليم لهذا المسار", flow: "مسار العمل", total: "الإجمالي", payment: "الدفعة", amount: "المبلغ", when: "موعد الاستحقاق", feeTitle: "رسوم التنفيذ والتطوير الشاملة", feeNote: "إجمالي تنفيذ وتطوير نطاق العمل الموضح في هذا العرض.",
     ops: "التكلفة التشغيلية", opsNote: "تُدفع لمزودي الخدمات مباشرة، ومنفصلة عن رسوم التنفيذ.", service: "الخدمة", price: "السعر", scope: "نطاق المشروع", durationLine: "مدة التنفيذ", footer: "عرض مشروع لـ",
     milestoneOf: "وهي محطة استحقاق", schedule: "جدول دفعات التنفيذ", fixed: "اشتراكات ثابتة", usage: "حسب الاستخدام", usageNote: "تُحاسب حسب الاستهلاك الفعلي وتُدفع لمزود الخدمة مباشرة.", summary: "الخلاصة · تقدير تشغيل وليس سقفاً مضموناً", about: "حوالي", perMonth: "شهرياً", start: "يبدأ العمل فور اعتماد العرض ودفعة البدء، وفق مراحل التسليم الموضحة.", weeksWord: "أسابيع",
+    systems: "الأنظمة والخدمات التقنية", sysName: "النظام", sysDetails: "التفاصيل", sysCost: "التكلفة", sysPer: { MONTHLY: "/ شهر", YEARLY: "/ سنة", ONE_TIME: "مرة واحدة" } as Record<string, string>,
     subT: "الاشتراك الشهري", subNote: "اشتراك ثابت يشمل التشغيل والاستضافة والصيانة واستهلاك الذكاء الاصطناعي المعتاد.", setup: "رسوم التأسيس والتنفيذ", perMonthShort: "/ شهر", includes: "يشمل الاشتراك", terms: "شروط الاستهلاك",
     msgTitle: "رسائل واتساب", msgText: (free: number) => `أول ${free.toLocaleString("en-US")} رسالة شهرياً مجانية ضمن الاشتراك. بعدها يدفع العميل ثمن الرسائل لميتا مباشرة حسب الاستهلاك الفعلي، بالأسعار الحالية التالية:`, msgChange: "أسعار الرسائل تحددها ميتا وقد تتغير من طرفها، والمحاسبة عليها بين العميل وميتا مباشرة وليست ضمن الاشتراك.",
     aiTitle: "استهلاك الذكاء الاصطناعي", aiText: "الاشتراك يغطي الاستهلاك المعتاد للذكاء الاصطناعي. في حال زيادة الاستهلاك عن المعدل الطبيعي، تُضاف تكلفة الزيادة الفعلية على الاشتراك الشهري.", subMonthly: "اشتراك شهري", cur: { EGP: "جنيه مصري", SAR: "ريال سعودي", USD: "دولار" } as Record<string, string>, curShort: { EGP: "ج", SAR: "ريال", USD: "$" } as Record<string, string> },
@@ -126,6 +131,7 @@ const L = {
     output: "Deliverable for this track", flow: "How it works", total: "Total", payment: "Payment", amount: "Amount", when: "Due", feeTitle: "Total implementation fee", feeNote: "Covers the full scope described in this proposal.",
     ops: "Running costs", opsNote: "Paid directly to the providers, separate from the implementation fee.", service: "Service", price: "Price", scope: "Project scope", durationLine: "Timeline", footer: "Proposal for",
     milestoneOf: "this is the milestone for", schedule: "Payment schedule", fixed: "Fixed subscriptions", usage: "Usage-based", usageNote: "Billed by actual usage and paid directly to the provider.", summary: "Summary · an operating estimate, not a guaranteed cap", about: "about", perMonth: "per month", start: "Work starts once the proposal is approved and the first payment is made, following the phases above.", weeksWord: "weeks",
+    systems: "Systems & technical services", sysName: "System", sysDetails: "Details", sysCost: "Cost", sysPer: { MONTHLY: "/ month", YEARLY: "/ year", ONE_TIME: "one-time" } as Record<string, string>,
     subT: "Monthly subscription", subNote: "A fixed subscription covering operation, hosting, maintenance and normal AI usage.", setup: "Setup & implementation fee", perMonthShort: "/ month", includes: "Included in the subscription", terms: "Usage terms",
     msgTitle: "WhatsApp messages", msgText: (free: number) => `The first ${free.toLocaleString("en-US")} messages per month are included. Beyond that, the client pays Meta directly for actual usage at the current rates:`, msgChange: "Message prices are set by Meta and may change on Meta's side; they are billed between the client and Meta directly and are not part of the subscription.",
     aiTitle: "AI usage", aiText: "The subscription covers normal AI usage. If usage rises above the normal level, the actual extra cost is added to the monthly subscription.", subMonthly: "Monthly subscription", cur: { EGP: "EGP", SAR: "SAR", USD: "USD" } as Record<string, string>, curShort: { EGP: "EGP", SAR: "SAR", USD: "USD" } as Record<string, string> },
@@ -159,7 +165,7 @@ export async function renderBrief(c: BriefContent, f: Facts, lang: Lang) {
   // 1 cover
   const scopeTiles = (c.tracks[0]?.items ?? []).slice(0, 3);
   pages.push(page(`<div class="pill pink">${t.cover}</div><h1 class="cover">${esc(c.title1)}${c.title2 ? `<br><span>${esc(c.title2)}</span>` : ""}</h1>
-    <p class="tagline">${c.tagline.map(esc).join(" · ")}</p><p class="lead">${esc(c.intro)}</p>
+    <p class="tagline">${c.tagline.map(esc).join(" · ")}</p>${f.p.kinds ? `<div class="kchips">${f.p.kinds.split(",").filter(Boolean).map((k) => `<span>${esc(lang === "ar" ? KINDS[k as keyof typeof KINDS] : KINDS_EN[k])}</span>`).join("")}</div>` : ""}<p class="lead">${esc(c.intro)}</p>
     ${scopeTiles.length ? `<div class="tiles">${scopeTiles.map((x, i) => `<div><i>${num("0" + (i + 1))}</i><b>${esc(x.title)}</b></div>`).join("")}</div>` : ""}
     <div class="for"><small>${t.for}</small><b>${esc(clientName)}</b>${f.client?.company ? `<small>${esc(f.client.company)}</small>` : ""}</div>
     <div class="kpis">${f.weeks ? `<div><b>${num(f.weeks)} ${t.weeks}</b><span>${t.duration}</span></div>` : ""}${isSub ? `${f.p.price ? `<div><b>${num(n(f.p.price))} ${t.curShort[cur]}</b><span>${t.setup}</span></div>` : ""}<div><b>${num(n(f.p.monthlyFee ?? 0))} ${t.curShort[cur]} ${t.perMonthShort}</b><span>${t.subMonthly}</span></div>` : `<div><b>${num(n(f.p.price))} ${t.curShort[cur]}</b><span>${t.fee}</span></div>${monthlyLine ? `<div><b>${num(monthlyLine)}</b><span>${t.monthly}</span></div>` : ""}`}</div>`, true));
@@ -205,11 +211,13 @@ export async function renderBrief(c: BriefContent, f: Facts, lang: Lang) {
   const estimate = fixedMonthly + (f.usageEstimate ?? 0);
   const bill = (b: string) => (lang === "ar" ? BILLING[b as keyof typeof BILLING] : BILL_EN[b]);
   const rows = plan.map((x) => `<tr><td>${esc(x.label)}</td><td>${num(n(x.amount))} ${t.curShort[x.currency]}</td><td>${esc(x.dueNote || "")}</td></tr>`).join("");
+  const sysBlock = f.assets.length ? `<h2>${t.systems}</h2><table><thead><tr><th>${t.sysName}</th><th>${t.sysDetails}</th><th>${t.sysCost}</th></tr></thead><tbody>${f.assets.map((x) => `<tr><td><b>${esc(x.name)}</b><br><small>${esc(lang === "ar" ? ASSET_KINDS[x.kind as keyof typeof ASSET_KINDS] : ASSET_KINDS_EN[x.kind])}${x.provider ? ` · ${esc(x.provider)}` : ""}${x.url ? ` · ${num(x.url)}` : ""}</small></td><td>${esc(x.details || "")}</td><td>${x.cost ? `${num(n(x.cost))} ${t.curShort[x.currency]} ${t.sysPer[x.billing]}<br><small>${lang === "ar" ? PAID_BY[x.paidBy as keyof typeof PAID_BY] : PAID_BY_EN[x.paidBy]}</small>` : `<small>${lang === "ar" ? PAID_BY[x.paidBy as keyof typeof PAID_BY] : PAID_BY_EN[x.paidBy]}</small>`}</td></tr>`).join("")}</tbody></table>` : "";
   if (isSub) {
     const free = f.p.freeMessages ?? 1000;
     pages.push(page(`<div class="pill">${num("0" + sec)} · ${t.s5}</div><h1>${t.s5t}</h1>
       <div class="card fee"><small class="k">${t.subT}</small><div class="big">${num(n(f.p.monthlyFee ?? 0))} <span>${t.cur[cur]} ${t.perMonthShort}</span></div><p>${t.subNote}</p></div>
       ${f.p.price ? `<div class="card"><small class="k">${t.setup}</small><h3>${num(n(f.p.price))} ${t.cur[cur]}</h3>${rows ? `<table><thead><tr><th>${t.payment}</th><th>${t.amount}</th><th>${t.when}</th></tr></thead><tbody>${rows}</tbody></table>` : ""}</div>` : ""}
+      ${sysBlock}
       ${fixed.length ? `<h2>${t.includes}</h2><ul>${fixed.map((s) => `<li>${esc(s.item)}${s.details ? ` · <span class="muted">${esc(s.details)}</span>` : ""}</li>`).join("")}</ul>` : ""}
       <h2>${t.terms}</h2>
       <div class="op"><h3>1. ${t.msgTitle}</h3><p>${t.msgText(free)}</p>${usage.map((s) => `<p><b>${esc(s.item)}:</b> ${num(n(s.price))} ${t.curShort[s.currency]} ${bill(s.billing)}</p>`).join("")}<p class="muted">${t.msgChange}</p></div>
@@ -220,6 +228,7 @@ export async function renderBrief(c: BriefContent, f: Facts, lang: Lang) {
   pages.push(page(`<div class="pill">${num("0" + sec)} · ${t.s5}</div><h1>${t.s5t}</h1>
     <div class="card fee"><small class="k">${t.feeTitle}</small><div class="big">${num(n(f.p.price))} <span>${t.cur[cur]}</span></div><p>${t.feeNote}</p></div>
     ${rows ? `<h2>${t.schedule}</h2><table><thead><tr><th>${t.payment}</th><th>${t.amount}</th><th>${t.when}</th></tr></thead><tbody>${rows}<tr class="tot"><td>${t.total}</td><td>${num(n(f.p.price))} ${t.curShort[cur]}</td><td></td></tr></tbody></table>` : ""}
+    ${sysBlock}
     ${f.sups.length ? `<h2>${t.ops}</h2>
       ${fixed.length ? `<div class="op"><h3>1. ${t.fixed}</h3>${fixed.map((s) => `<p><b>${esc(s.provider)} · ${esc(s.item)}:</b> ${num(n(s.price))} ${t.curShort[s.currency]} ${bill(s.billing)}${s.currency !== cur ? ` <span class="muted">(${t.about} ${num(n(Math.round(toCur(s.price, s.currency))))} ${t.curShort[cur]})</span>` : ""}${s.details ? ` · ${esc(s.details)}` : ""}</p>`).join("")}</div>` : ""}
       ${usage.length ? `<div class="op"><h3>${fixed.length ? "2" : "1"}. ${t.usage}</h3><p class="muted">${t.usageNote}</p>${usage.map((s) => `<p><b>${esc(s.item)}:</b> ${num(n(s.price))} ${t.curShort[s.currency]} ${bill(s.billing)}${s.details ? ` · ${esc(s.details)}` : ""}</p>`).join("")}</div>` : ""}
@@ -264,6 +273,7 @@ footer{position:absolute;bottom:11mm;left:17mm;right:17mm;border-top:1px solid v
 .rule{height:3px;background:var(--blue);margin:14px 0 4px}
 .op{border-inline-start:3px solid var(--cyan);background:var(--pale);padding:9px 14px;margin:8px 0}.op p{font-size:12.5px;margin:3px 0}.op h3{font-size:14.5px}
 .muted{color:var(--muted)}.tiny{font-size:11px;color:var(--muted);margin-top:10px}
+.kchips{display:flex;gap:2mm;flex-wrap:wrap;margin:-4mm 0 6mm}.kchips span{border:1px solid rgba(32,198,234,.5);color:var(--cyan);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700}
 bdi{unicode-bidi:isolate}
 </style></head><body>${body}</body></html>`;
 }

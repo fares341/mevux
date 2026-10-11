@@ -31,7 +31,8 @@ export async function createProject(_: R, fd: FormData): Promise<R> {
   const clientId = f(fd, "clientId");
   const cl = clientId ? await db.query.clients.findFirst({ where: eq(clients.id, clientId) }) : null;
   const s = await getSettings();
-  const [row] = await db.insert(projects).values({ ...p.data, clientId: cl?.id ?? null, rate: await rateFor(p.data.currency), fundPct: Number(s.fundPct), ownerPct: Number(s.ownerPct), teamCapPct: Number(s.teamCapPct) }).returning();
+  const newKinds = fd.getAll("kinds").map(String).filter((k) => ["AUTOMATION", "CHATBOT", "WEBSITE", "APP", "SAAS", "DASHBOARD"].includes(k)).join(",") || null;
+  const [row] = await db.insert(projects).values({ ...p.data, kinds: newKinds, clientId: cl?.id ?? null, rate: await rateFor(p.data.currency), fundPct: Number(s.fundPct), ownerPct: Number(s.ownerPct), teamCapPct: Number(s.teamCapPct) }).returning();
   // "Banned from the next project": every open ban is consumed by this new project.
   await db.update(bans).set({ consumedByProject: row.id }).where(isNull(bans.consumedByProject));
   if (cl && !["ACTIVE", "DONE"].includes(cl.stage)) {
@@ -54,7 +55,15 @@ export async function updateProject(_: R, fd: FormData): Promise<R> {
   if (!p.success) return { error: "راجع البيانات: " + p.error.issues[0].path.join(".") };
   const cur = await db.query.projects.findFirst({ where: eq(projects.id, id) });
   if (!cur) return { error: "المشروع غير موجود." };
-  await db.update(projects).set({ ...p.data, closedAt: p.data.status === "CLOSED" ? (cur.closedAt ?? new Date()) : null }).where(eq(projects.id, id));
+  // Client link: pick an existing client so all of a person's projects sit under one client.
+  const clientId = f(fd, "clientId");
+  const cl = clientId ? await db.query.clients.findFirst({ where: eq(clients.id, clientId) }) : null;
+  const kinds = fd.getAll("kinds").map(String).filter((k) => ["AUTOMATION", "CHATBOT", "WEBSITE", "APP", "SAAS", "DASHBOARD"].includes(k)).join(",");
+  const nd = f(fd, "nextDueDate");
+  const rd = Math.max(0, Math.min(30, Number(f(fd, "reminderDays") ?? 3) || 0));
+  await db.update(projects).set({ ...p.data, client: cl?.name ?? p.data.client, clientId: clientId === "" || clientId === undefined ? (fd.has("clientId") ? null : cur.clientId) : (cl?.id ?? cur.clientId),
+    kinds: kinds || null, nextDueDate: nd ? new Date(nd) : null, reminderDays: rd,
+    closedAt: p.data.status === "CLOSED" ? (cur.closedAt ?? new Date()) : null }).where(eq(projects.id, id));
   await audit(admin.id, "project_update", `${id} → ${p.data.status}`);
   done(id);
   return { ok: "تم حفظ المشروع." };
@@ -76,6 +85,7 @@ export async function addPayment(_: R, fd: FormData): Promise<R> {
   const p = z.object({ amount: z.coerce.number().positive("المبلغ غير صحيح").max(1e10), paidAt: date, note: z.string().max(200).optional() }).safeParse({ amount: f(fd, "amount"), paidAt: f(fd, "paidAt"), note: f(fd, "note") });
   if (!p.success) return { error: p.error.issues[0].message };
   await db.insert(projectPayments).values({ projectId, amount: p.data.amount, paidAt: p.data.paidAt ?? new Date(), note: p.data.note });
+  await (await import("@/lib/subscriptions")).advanceAfterPayment(projectId);
   await audit(admin.id, "payment_add", `${projectId} ${p.data.amount}`);
   done(projectId);
   return { ok: "تم تسجيل الدفعة." };

@@ -25,18 +25,20 @@ export function NewProject({ clients = [], clientId }: { clients?: { id: string;
       <label>موعد التسليم<input id="np-due" name="dueDate" type="date" /></label>
     </div>
     <BillingFields k="np" d={{}} />
+    <Kinds k="np" />
     <label style={{ marginBottom: 14 }}>وصف المشروع<textarea id="np-desc" name="description" /></label>
     <button disabled={p}>إنشاء المشروع</button>
   </form>);
 }
 
-type P = { billing?: string; monthlyFee?: number | null; freeMessages?: number | null; id: string; name: string; client: string; price: number; rate: number; size: string; status: string; startDate: Date | null; dueDate: Date | null; description: string | null; currency: string };
-export function EditProject({ p }: { p: P }) {
+type P = { clientId?: string | null; kinds?: string | null; nextDueDate?: Date | null; reminderDays?: number; billing?: string; monthlyFee?: number | null; freeMessages?: number | null; id: string; name: string; client: string; price: number; rate: number; size: string; status: string; startDate: Date | null; dueDate: Date | null; description: string | null; currency: string };
+export function EditProject({ p, clients = [] }: { p: P; clients?: { id: string; name: string }[] }) {
   const [s, a, pend] = useActionState(updateProject, {});
   return (<form action={a}><Msg s={s} /><input type="hidden" name="id" value={p.id} />
     <div className="row">
       <label>اسم المشروع<input id="ep-name" name="name" defaultValue={p.name} required /></label>
-      <label>العميل<input id="ep-client" name="client" defaultValue={p.client} required /></label>
+      <label>العميل<small>اختار عميل متسجل عشان كل مشاريعه تبقى تحته</small><select id="ep-clientId" name="clientId" defaultValue={p.clientId || ""}><option value="">— مش متربط بعميل —</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+      <input type="hidden" name="client" value={p.client} />
       <label>المرحلة<select id="ep-status" name="status" defaultValue={p.status}>
         <option value="MEETING">ميتنج</option><option value="BRIEF">بريف</option><option value="APPROVED">موافقة وعربون</option><option value="IN_PROGRESS">تنفيذ</option><option value="DELIVERED">تم التسليم</option><option value="CLOSED">مقفول ومدفوع</option><option value="CANCELLED">ملغي</option></select></label>
       <label>الحجم<select id="ep-size" name="size" defaultValue={p.size}><option value="SMALL">صغير</option><option value="MEDIUM">متوسط</option><option value="LARGE">كبير</option></select></label>
@@ -47,7 +49,8 @@ export function EditProject({ p }: { p: P }) {
       <label>البداية<input id="ep-start" name="startDate" type="date" defaultValue={d(p.startDate)} /></label>
       <label>موعد التسليم<input id="ep-due" name="dueDate" type="date" defaultValue={d(p.dueDate)} /></label>
     </div>
-    <BillingFields k="ep" d={{ billing: p.billing, monthlyFee: p.monthlyFee, freeMessages: p.freeMessages }} />
+    <BillingFields k="ep" d={{ billing: p.billing, monthlyFee: p.monthlyFee, freeMessages: p.freeMessages, nextDueDate: p.nextDueDate, reminderDays: p.reminderDays }} />
+    <Kinds k="ep" v={p.kinds} />
     <label style={{ marginBottom: 14 }}>وصف المشروع<textarea id="ep-desc" name="description" defaultValue={p.description || ""} /></label>
     <p className="sub" style={{ marginTop: 0 }}>اختيار <b>مقفول ومدفوع</b> يعني إن العميل استلم ووافق ودفع، وساعتها مستحقات الفريق تتحسب ويبقى ينفع تصرفها.</p>
     <button disabled={pend}>حفظ</button>
@@ -150,7 +153,7 @@ export function RespondForm({ id }: { id: string }) {
   </form>);
 }
 
-function BillingFields({ k, d }: { k: string; d: { billing?: string; monthlyFee?: number | null; freeMessages?: number | null } }) {
+function BillingFields({ k, d }: { k: string; d: { billing?: string; monthlyFee?: number | null; freeMessages?: number | null; nextDueDate?: Date | null; reminderDays?: number } }) {
   const [b, setB] = useState(d.billing || "ONE_TIME");
   return (<div className="row">
     <label>نوع التعاقد<select id={k + "-billing"} name="billing" value={b} onChange={(e) => setB(e.target.value)}>
@@ -158,6 +161,17 @@ function BillingFields({ k, d }: { k: string; d: { billing?: string; monthlyFee?
     {b === "SUBSCRIPTION" && <>
       <label>الاشتراك الشهري<small>بنفس عملة المشروع · السعر فوق = رسوم التأسيس (ممكن صفر)</small><input id={k + "-monthly"} name="monthlyFee" type="number" min="0" step="0.01" dir="ltr" defaultValue={d.monthlyFee ?? ""} required /></label>
       <label>رسائل واتساب المجانية شهرياً<small>بعدها العميل يدفع لميتا مباشرة</small><input id={k + "-free"} name="freeMessages" type="number" min="0" dir="ltr" defaultValue={d.freeMessages ?? 1000} /></label>
+      <label>ميعاد الدفع الجاي<small>إنت بتحدده، وبعد كل دفعة بيتنقل شهر لوحده</small><input id={k + "-next"} name="nextDueDate" type="date" defaultValue={d.nextDueDate ? new Date(d.nextDueDate).toISOString().slice(0, 10) : ""} /></label>
+      <label>نبّهني قبلها بـ<small>أيام</small><input id={k + "-remind"} name="reminderDays" type="number" min="0" max="30" dir="ltr" defaultValue={d.reminderDays ?? 3} /></label>
     </>}
   </div>);
+}
+
+const KIND_LABELS: [string, string][] = [["AUTOMATION", "أوتوميشن"], ["CHATBOT", "شات بوت / وكيل AI"], ["WEBSITE", "موقع"], ["APP", "تطبيق"], ["SAAS", "SaaS"], ["DASHBOARD", "داشبورد / نظام"]];
+function Kinds({ k, v }: { k: string; v?: string | null }) {
+  const on = new Set((v || "").split(",").filter(Boolean));
+  return (<fieldset style={{ border: "1px solid var(--line)", borderRadius: 5, padding: "8px 14px", marginBottom: 14 }}>
+    <legend style={{ fontWeight: 700, color: "var(--navy)", fontSize: 13 }}>نوع الشغل</legend>
+    <div className="actions">{KIND_LABELS.map(([key, l]) => <label key={key} style={{ flexDirection: "row", alignItems: "center", gap: 6, fontWeight: 400 }}><input type="checkbox" name="kinds" value={key} defaultChecked={on.has(key)} id={`${k}-kind-${key}`} style={{ width: "auto" }} />{l}</label>)}</div>
+  </fieldset>);
 }

@@ -2,13 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";
-import { db, users, suppliers, bans } from "@/lib/db";
+import { db, users, suppliers, bans, clients } from "@/lib/db";
 import { loadProject, loadTeamView, calc, rules, STATUS, SIZE, DED, ACTIVE } from "@/lib/projects";
 import { egp } from "@/lib/finance";
 import { BILLING } from "@/lib/labels";
 import { removeRow, setDelivered, updateProgress, decideDeduction, deleteProject } from "../actions";
 import { EditProject, PaymentForm, CostForm, RoleForm, DeductionForm } from "../forms";
 import { RoleUpload } from "../files-ui";
+import { ProjectAssets } from "../assets";
+import { KINDS } from "@/lib/labels";
 import { BriefForm } from "../brief-ui";
 import { deleteBrief } from "../brief-actions";
 import { projectBriefs } from "@/lib/db";
@@ -47,6 +49,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           {mine && <div style={{ marginTop: 12 }}><b style={{ color: "var(--navy)" }}>ملفات الدور</b><FileList files={files.filter((f) => f.roleId === r.id)} me={me} /></div>}
           {own && <details style={{ marginTop: 10 }} open={!r.deliveredAt}><summary>ارفع ملف شغلك</summary><div style={{ marginTop: 10 }}><RoleUpload roleId={r.id} delivered={!!r.deliveredAt} /></div></details>}
         </section>); })}
+      {mine && <ProjectAssets projectId={p.id} admin={false} />}
       {mine && <Credentials projectId={p.id} me={me} />}
       {mine && <FinalFiles files={files} me={me} projectId={p.id} />}
     </>);
@@ -61,6 +64,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   ]);
   if (!p) notFound();
   const files = await loadFiles(p.id);
+  const allClients = await db.select({ id: clients.id, name: clients.name }).from(clients).orderBy(asc(clients.name));
   const briefs = await db.select().from(projectBriefs).where(eq(projectBriefs.projectId, p.id)).orderBy(desc(projectBriefs.createdAt));
   const c = calc(p, r);
   const name = (uid: string) => team.find((u) => u.id === uid)?.name || "—";
@@ -68,7 +72,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const allDeds = p.roles.flatMap((ro) => ro.deductions.map((dd) => ({ ...dd, role: ro.title })));
 
   return (<>
-    <div className="head"><div><span className="tag">{STATUS[p.status]} · {SIZE[p.size]}</span><h1>{p.name}</h1><p className="sub">{p.client} · <span className="num">{egp(p.price)}</span> {CUR[p.currency]}{p.currency !== "EGP" && <> × <span className="num">{p.rate}</span></>}{p.billing === "SUBSCRIPTION" && <> · <span className="pill info">اشتراك <span className="num">{egp(p.monthlyFee ?? 0)}</span> {CUR[p.currency]} / شهر</span></>}</p></div>
+    <div className="head"><div><span className="tag">{STATUS[p.status]} · {SIZE[p.size]}</span><h1>{p.name}</h1><p className="sub">{p.client} · <span className="num">{egp(p.price)}</span> {CUR[p.currency]}{p.currency !== "EGP" && <> × <span className="num">{p.rate}</span></>}{p.kinds && <> · {p.kinds.split(",").map((k) => <span key={k} className="pill info" style={{ marginInlineEnd: 4 }}>{KINDS[k as keyof typeof KINDS]}</span>)}</>}{p.billing === "SUBSCRIPTION" && <> · <span className="pill info">اشتراك <span className="num">{egp(p.monthlyFee ?? 0)}</span> {CUR[p.currency]} / شهر</span></>}</p></div>
       <div className="actions"><Link className="btn ghost-link" href={`/chats/${p.id}`}>شات المشروع</Link><Link className="btn" style={{ background: "var(--pink)" }} href={`/briefs?project=${p.id}`}>عمل بريف</Link></div></div>
 
     <div className="grid">
@@ -125,6 +129,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       </div></div>
     </section>
 
+    <ProjectAssets projectId={p.id} admin />
     <Credentials projectId={p.id} me={me} />
     <FinalFiles files={files} me={me} projectId={p.id} />
 
@@ -156,7 +161,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       </section>
     </div>
 
-    <section className="card"><details><summary>بيانات المشروع ومرحلته</summary><div style={{ marginTop: 12 }}><EditProject p={p} /></div></details></section>
+    <section className="card"><details><summary>بيانات المشروع ومرحلته</summary><div style={{ marginTop: 12 }}><EditProject p={p} clients={allClients} /></div></details></section>
     <form action={deleteProject} className="actions"><input type="hidden" name="id" value={p.id} /><input id="del-project" name="confirm" placeholder='اكتب "حذف" لحذف المشروع' style={{ maxWidth: 220 }} /><button className="sm danger">حذف المشروع</button></form>
   </>);
 }
