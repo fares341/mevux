@@ -1,14 +1,17 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, and } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";
 import { visibleProjectIds } from "@/lib/work";
-import { db, users, suppliers, bans, clients } from "@/lib/db";
+import { db, users, suppliers, bans, clients, roleMembers, projectRoles } from "@/lib/db";
 import { loadProject, loadTeamView, calc, rules, STATUS, SIZE, DED, ACTIVE } from "@/lib/projects";
 import { egp } from "@/lib/finance";
 import { BILLING } from "@/lib/labels";
 import { removeRow, setDelivered, updateProgress, decideDeduction } from "../actions";
 import { RoleNotes, loadRoleNotes } from "../role-notes";
+import { WorkOrderMember, WorkOrderAdmin } from "../work-order";
+import { lateDaysFor } from "@/lib/finance";
+import { getSettings } from "@/lib/settings";
 import { EditProject, PaymentForm, CostForm, RoleForm, DeductionForm, DeleteProject } from "../forms";
 import { RoleUpload } from "../files-ui";
 import { ProjectAssets } from "../assets";
@@ -42,6 +45,10 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     const files = mine ? await loadFiles(p.id) : [];
     // Role instructions: only for roles this person is in.
     const notes = await loadRoleNotes(p.roles.filter((r) => r.members.some((m) => m.userId === me.id)).map((r) => r.id));
+    // The person's OWN fee share per role (never anyone else's), for the deduction table in EGP.
+    const myShares = await db.select({ roleId: roleMembers.roleId, sharePct: roleMembers.sharePct, fee: projectRoles.fee }).from(roleMembers)
+      .innerJoin(projectRoles, eq(roleMembers.roleId, projectRoles.id)).where(and(eq(roleMembers.userId, me.id), eq(projectRoles.projectId, p.id)));
+    const rr = await rules();
     return (<>
       <PageHead title={p.name} crumbs={[{ href: "/projects", label: "المشاريع" }]} badge={<span className="pill info">{STATUS[p.status]}</span>}
         help={<>{p.client} · التسليم {fmt(p.dueDate)}. حدّث تقدمك وارفع ملفك من كارت دورك.</>} actions={mine ? [{ href: `/chats/${p.id}`, label: "شات المشروع", icon: "chat" }] : undefined} />
@@ -50,12 +57,13 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
         <section className="card" key={r.id} style={own ? { borderTopColor: "var(--cyan)" } : undefined}>
           <div className="actions" style={{ justifyContent: "space-between" }}><h2 style={{ margin: 0 }}>{r.title} {own && <span className="pill info">دورك</span>}</h2>{r.deliveredAt ? <span className="pill ok">اتسلّم {fmt(r.deliveredAt)}</span> : <span className="sub">الموعد {fmt(r.dueDate)}</span>}</div>
           <p className="sub">{r.members.map((m) => m.name + (m.isLead && r.members.length > 1 ? " (المسؤول الأول)" : "")).join("، ")}</p>
-          {r.scope && <p style={{ whiteSpace: "pre-wrap" }}><b>المطلوب: </b>{r.scope}</p>}
-          {r.deliverables && <p style={{ whiteSpace: "pre-wrap" }}><b>المخرجات: </b>{r.deliverables}</p>}
+          {!(own && r.issuedAt) && r.scope && <p style={{ whiteSpace: "pre-wrap" }}><b>المطلوب: </b>{r.scope}</p>}
+          {!(own && r.issuedAt) && r.deliverables && <p style={{ whiteSpace: "pre-wrap" }}><b>المخرجات: </b>{r.deliverables}</p>}
           <div className="actions"><b>التقدم:</b> <Progress roleId={r.id} value={r.progress} canEdit={own} /></div>
           {mine && <div style={{ marginTop: 12 }}><b style={{ color: "var(--navy)" }}>ملفات الدور</b><FileList files={files.filter((f) => f.roleId === r.id)} me={me} /></div>}
+          {own && (() => { const sh = myShares.find((x) => x.roleId === r.id); return <WorkOrderMember role={r} base={sh ? sh.fee * sh.sharePct / 100 : 0} rules={rr} days={lateDaysFor(r)} />; })()}
           {own && <RoleNotes notes={notes} roleId={r.id} admin={false} />}
-          {own && <details style={{ marginTop: 10 }} open={!r.deliveredAt}><summary>ارفع ملف شغلك</summary><div style={{ marginTop: 10 }}><RoleUpload roleId={r.id} delivered={!!r.deliveredAt} /></div></details>}
+          {own && <details style={{ marginTop: 10 }} open={!r.deliveredAt}><summary>ارفع ملف شغلك</summary><div style={{ marginTop: 10 }}><RoleUpload roleId={r.id} delivered={!!r.deliveredAt || !!r.issuedAt} /></div></details>}
         </section>); })}
       {mine && <ProjectAssets projectId={p.id} admin={false} />}
       {mine && <Credentials projectId={p.id} me={me} />}
@@ -73,6 +81,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   if (!p) notFound();
   const files = await loadFiles(p.id);
   const notes = await loadRoleNotes(p.roles.map((ro) => ro.id));
+  const st = await getSettings();
   const allClients = await db.select({ id: clients.id, name: clients.name }).from(clients).orderBy(asc(clients.name));
   const briefs = await db.select().from(projectBriefs).where(eq(projectBriefs.projectId, p.id)).orderBy(desc(projectBriefs.createdAt));
   const c = calc(p, r);
@@ -130,6 +139,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
               <input aria-label="تاريخ التسليم" id={"dl-" + ro.id} name="deliveredAt" type="date" defaultValue={ro.deliveredAt ? ro.deliveredAt.toISOString().slice(0, 10) : ""} style={{ maxWidth: 160 }} /><button className="sm ghost">{ro.deliveredAt ? "تعديل تاريخ التسليم" : "تسجيل التسليم"}</button></form>
             <Progress roleId={ro.id} value={ro.progress} canEdit />
           </div>
+          <WorkOrderAdmin role={ro} rules={r} reworkPct={r.reworkPct} defaultGrace={Number(st.graceHours) || 0} people={ro.members.map((m) => name(m.userId)).join(" و")} />
           <RoleNotes notes={notes} roleId={ro.id} admin />
           <div style={{ marginTop: 10 }}><b style={{ color: "var(--navy)" }}>ملفات الدور</b><FileList files={files.filter((f) => f.roleId === ro.id)} me={me} /></div>
           <details style={{ marginTop: 10 }}><summary>تعديل ملف الدور</summary><div style={{ marginTop: 12 }}>

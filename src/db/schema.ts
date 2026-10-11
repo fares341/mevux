@@ -119,6 +119,20 @@ export const projectRoles = pgTable("project_roles", {
   dueDate: timestamp("due_date", { withTimezone: true }),
   deliveredAt: timestamp("delivered_at", { withTimezone: true }),
   progress: integer("progress").notNull().default(0),
+  // ---- Work order (أمر الشغل) ----
+  doneDefinition: text("done_definition"),            // "considered done when…"
+  checklist: text("checklist"),                        // JSON string[] of deliverables
+  checklistDone: text("checklist_done"),               // JSON number[] ticked by the employee
+  deadlineAt: timestamp("deadline_at", { withTimezone: true }), // exact due moment (date + time)
+  graceHours: integer("grace_hours").notNull().default(0),
+  issuedAt: timestamp("issued_at", { withTimezone: true }),     // sent to the employee
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }), // "received & understood"
+  extUntil: timestamp("ext_until", { withTimezone: true }),     // requested new deadline
+  extReason: text("ext_reason"),
+  extStatus: text("ext_status"),                       // PENDING | APPROVED | REJECTED
+  reviewStatus: text("review_status"),                 // PENDING | ACCEPTED | REWORK
+  reviewNote: text("review_note"),
+  reworkDueAt: timestamp("rework_due_at", { withTimezone: true }),
   createdAt: created(),
 });
 

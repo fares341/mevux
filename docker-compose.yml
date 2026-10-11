@@ -16,6 +16,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://mevix:${DB_PASSWORD}@db:5432/mevix
+      TZ: Africa/Cairo   # all dates shown in Cairo time
     volumes: [uploads:/data/uploads]
     depends_on: { db: { condition: service_healthy } }
 
@@ -25,6 +26,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://mevix:${DB_PASSWORD}@db:5432/mevix
+      TZ: Africa/Cairo
     depends_on: { db: { condition: service_healthy } }
 
   caddy:

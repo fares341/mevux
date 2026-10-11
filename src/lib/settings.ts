@@ -7,6 +7,7 @@ export const DEFAULTS = {
   ownerPct: "70",
   latePctPerDay: "5",
   lateMaxPct: "25",
+  graceHours: "0",          // default grace after a work-order deadline (hours)
   reworkPct: "10",
   noReplyPct: "5",
   clientLossPct: "80",

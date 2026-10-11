@@ -20,6 +20,9 @@ export async function saveFinance(_: R, fd: FormData): Promise<R> {
     if (!p.success) return { error: "كل النسب لازم تكون بين 0 و 100." };
     await setSetting(k, String(p.data));
   }
+  const g = z.coerce.number().int().min(0).max(168).safeParse(fd.get("graceHours") ?? "0");
+  if (!g.success) return { error: "وقت السماح لازم يكون من 0 لـ 168 ساعة." };
+  await setSetting("graceHours", String(g.data));
   for (const k of ["rateSAR", "rateUSD"]) {
     const p = z.coerce.number().positive().max(10000).safeParse(fd.get(k));
     if (!p.success) return { error: "سعر الصرف غير صحيح." };

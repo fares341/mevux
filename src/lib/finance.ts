@@ -3,6 +3,7 @@ export type Rules = { latePctPerDay: number; lateMaxPct: number };
 
 export type RoleIn = {
   id: string; title: string; fee: number; dueDate: Date | null; deliveredAt: Date | null;
+  deadlineAt?: Date | null; graceHours?: number | null;
   members: { userId: string; sharePct: number }[];
   deductions: { userId: string; pct: number; status: string }[];
 };
@@ -19,9 +20,36 @@ export function lateDays(due: Date | null, delivered: Date | null, now = new Dat
   return Math.max(0, Math.floor((end.getTime() - due.getTime()) / DAY));
 }
 
+/**
+ * The moment after which lateness starts.
+ * Work orders: exact deadline + grace hours. Older roles (date only): the whole due day counts.
+ */
+export function cutoff(role: Pick<RoleIn, "dueDate" | "deadlineAt" | "graceHours">): Date | null {
+  if (role.deadlineAt) return new Date(role.deadlineAt.getTime() + (role.graceHours ?? 0) * 3600000);
+  if (role.dueDate) return new Date(role.dueDate.getTime() + DAY);
+  return null;
+}
+/** Every started day after the cutoff counts as one late day (1 minute late = day 1). */
+export function lateDaysFor(role: Pick<RoleIn, "dueDate" | "deadlineAt" | "graceHours" | "deliveredAt">, now = new Date()): number {
+  const c = cutoff(role);
+  if (!c) return 0;
+  const end = role.deliveredAt ?? now;
+  return end <= c ? 0 : Math.ceil((end.getTime() - c.getTime()) / DAY);
+}
+/** What the employee loses for each day late, in EGP, until the cap. */
+export function deductionSchedule(base: number, role: Pick<RoleIn, "dueDate" | "deadlineAt" | "graceHours">, r: Rules) {
+  const c = cutoff(role);
+  if (!c || r.latePctPerDay <= 0) return [];
+  const steps = Math.ceil(r.lateMaxPct / r.latePctPerDay);
+  return Array.from({ length: steps }, (_, i) => {
+    const pct = Math.min((i + 1) * r.latePctPerDay, r.lateMaxPct);
+    return { day: i + 1, from: new Date(c.getTime() + i * DAY), to: new Date(c.getTime() + (i + 1) * DAY), pct, amount: Math.round(base * pct / 100), last: i === steps - 1 };
+  });
+}
+
 export function memberLine(role: RoleIn, userId: string, sharePct: number, r: Rules) {
   const base = role.fee * sharePct / 100;
-  const days = lateDays(role.dueDate, role.deliveredAt);
+  const days = lateDaysFor(role);
   const latePct = Math.min(days * r.latePctPerDay, r.lateMaxPct);
   const otherPct = role.deductions.filter((d) => d.userId === userId && d.status === "APPROVED").reduce((a, d) => a + d.pct, 0);
   const totalPct = Math.min(100, latePct + otherPct);

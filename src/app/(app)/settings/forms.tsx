@@ -21,6 +21,7 @@ export function FinanceForm({ s }: { s: Record<string, string> }) {
     <div className="row">
       <P name="latePctPerDay" label="التأخير % لكل يوم" v={s.latePctPerDay} />
       <P name="lateMaxPct" label="أقصى خصم للتأخير %" v={s.lateMaxPct} />
+      <label>وقت السماح الافتراضي (ساعات)<small>بعد معاد التسليم قبل ما الخصم يبدأ. تقدر تغيّره في كل أمر شغل.</small><input id="graceHours" name="graceHours" type="number" step="1" min="0" max="168" dir="ltr" defaultValue={s.graceHours ?? "0"} required /></label>
       <P name="reworkPct" label="رجوع شغل فيه أخطاء %" hint="لكل مرة" v={s.reworkPct} />
       <P name="noReplyPct" label="عدم الرد على البوت %" hint="بعد التحذير" v={s.noReplyPct} />
       <P name="clientLossPct" label="خسارة عميل %" hint="+ حرمان من المشروع التالي" v={s.clientLossPct} />

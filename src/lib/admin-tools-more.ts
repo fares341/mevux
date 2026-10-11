@@ -55,6 +55,7 @@ export const MORE_TOOLS: ToolDef[] = [
   fn("cashflow", "Money in and out per month: income, subscriptions, costs, team, fixed costs, expenses, net.", { months: N("how many months back, default 6") }),
   fn("update_supplier", "Change a supplier price or details.", { supplier: S("provider or service name"), price: N("new price"), currency: E(["EGP", "SAR", "USD"], "currency"), billing: E(["MONTHLY", "YEARLY", "PER_MESSAGE", "PER_USAGE", "ONE_TIME"], "billing"), details: S("details") }, ["supplier"]),
   fn("add_role_note", "Add instructions (a ticket) to someone's role in a project. Files, images or voice sent in this message are attached too. Only that role's people and the admin see it.", { project: S("project name"), role: S("role title or the person in it"), text: S("the instructions") }, ["project", "role"]),
+  fn("send_work_order", "Write and send the work order for a role: the detailed task, deliverables checklist, definition of done, exact deadline and grace hours. The employee then must press 'received & understood'. Lateness deductions count from deadline + grace.", { project: S("project name"), role: S("role title or the person in it"), task: S("what is required, in detail"), checklist: { type: "array", items: { type: "string" }, description: "deliverables, one per item" }, done_when: S("considered done when…"), deadline: S("YYYY-MM-DD HH:mm (Cairo time)"), grace_hours: N("grace hours after the deadline, optional") }, ["project", "role", "task", "checklist", "done_when", "deadline"]),
   fn("list_tasks", "Tasks, optionally for one project or person.", { project: S("project"), person: S("person"), open_only: B("default true") }),
 ];
 
@@ -348,6 +349,13 @@ export async function runMoreTool(name: string, a: Record<string, unknown>, u: S
       for (const f of todo) { await db.insert(roleNotes).values({ roleId: r.id, authorId: u.id, fileName: f.name, storedName: f.stored, size: f.size, mime: f.mime, isVoice: f.mime.startsWith("audio/") }); f.used = true; }
       revalidatePath(`/projects/${p.id}`);
       return { project: p.name, role: r.title, people: r.members.map((m) => m.name), saved: { text: !!s("text"), files: todo.map((f) => f.name) }, link: `/projects/${p.id}?tab=team` };
+    }
+    case "send_work_order": {
+      const p = await getProject(s("project")!);
+      const r = await getRole(p.id, s("role")!);
+      const { issueWorkOrder } = await import("@/app/(app)/projects/work-order-actions");
+      const res = await issueWorkOrder({}, fd({ roleId: r.id, scope: s("task"), checklist: Array.isArray(a.checklist) ? (a.checklist as string[]).join("\n") : s("checklist"), doneDefinition: s("done_when"), deadline: (s("deadline") || "").replace(" ", "T"), graceHours: n("grace_hours") }));
+      return { project: p.name, role: r.title, people: r.members.map((m) => m.name), result: done(res), link: `/projects/${p.id}?tab=team` };
     }
     case "list_tasks": {
       let rows = await db.select().from(tasks).orderBy(desc(tasks.createdAt));

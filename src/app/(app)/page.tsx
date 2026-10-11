@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { lateDaysFor, cutoff } from "@/lib/finance";
+import { fmtCairo } from "@/lib/tz";
 import { and, asc, desc, eq, gte, inArray, isNotNull, lte, ne, notInArray } from "drizzle-orm";
 import { requireUser, type SessionUser } from "@/lib/auth";
 import { db, users, suppliers, clients, complaints, deductions, tasks, projectRoles, roleMembers, projects } from "@/lib/db";
@@ -38,7 +40,17 @@ async function AdminToday({ u, greet }: { u: SessionUser; greet: string }) {
     db.select({ id: deductions.id }).from(deductions).where(eq(deductions.status, "PENDING")),
     chatProjects(u),
   ]);
+  // Work orders that need the owner: not received in 24h, extension requests, hand-ins to review.
+  const wo = await db.select({ r: projectRoles, project: projects.name, projectId: projects.id }).from(projectRoles).innerJoin(projects, eq(projectRoles.projectId, projects.id))
+    .where(and(isNotNull(projectRoles.issuedAt), inArray(projects.status, ["APPROVED", "IN_PROGRESS", "DELIVERED"])));
+  const dayAgo = new Date(Date.now() - 864e5);
+  const woItems: Item[] = [
+    ...wo.filter((x) => x.r.reviewStatus === "PENDING").map((x) => ({ level: "warn", title: <>سلّم «{x.r.title}» ومستني مراجعتك</>, sub: x.project, href: `/projects/${x.projectId}?tab=team`, cta: "راجع" }) as Item),
+    ...wo.filter((x) => x.r.extStatus === "PENDING").map((x) => ({ level: "warn", title: <>طلب تمديد على «{x.r.title}»</>, sub: `${x.project} · ${x.r.extReason ?? ""}`, href: `/projects/${x.projectId}?tab=team`, cta: "رد" }) as Item),
+    ...wo.filter((x) => !x.r.acceptedAt && x.r.issuedAt! < dayAgo).map((x) => ({ level: "bad", title: <>«{x.r.title}» ما اتستلمش من أكتر من يوم</>, sub: x.project, href: `/projects/${x.projectId}?tab=team`, cta: "افتح" }) as Item),
+  ];
   const items: Item[] = [
+    ...woItems,
     ...subs.map((x) => ({ level: x.overdue ? "bad" : "warn", title: <>اشتراك {x.name} · <span className="num">{x.fee.toLocaleString("en-US")}</span> {x.currency === "EGP" ? "ج" : x.currency === "SAR" ? "ريال" : "$"}</>, sub: `${x.client} · ${x.overdue ? `متأخر ${-x.days} يوم` : x.days === 0 ? "مستحق النهارده" : `مستحق بعد ${x.days} يوم`}`, href: `/projects/${x.id}?tab=money`, cta: "سجّل الدفعة" }) as Item),
     ...follow.map((c) => ({ level: c.nextDate! < today ? "bad" : "info", title: <>متابعة {c.name}: {c.nextStep || stageLabel(c)}</>, sub: `${day(c.nextDate!)} · ${stageLabel(c)}`, href: `/clients/${c.id}`, cta: "افتح العميل" }) as Item),
     ...f.lateRoles.map((x) => ({ level: "bad", title: <>{x.person} متأخر في {x.role}</>, sub: `${x.project} · ${x.days} يوم · ${x.progress}%`, href: "/follow", cta: "المتابعة" }) as Item),
@@ -79,7 +91,8 @@ async function TeamToday({ u, greet }: { u: SessionUser; greet: string }) {
   const { listTasks, visibleProjects, myProjectIds } = await import("@/lib/work");
   const { feed } = await import("@/lib/work");
   const [roles, myTasks, vis, mine, chats, today] = await Promise.all([
-    db.select({ id: projectRoles.id, title: projectRoles.title, progress: projectRoles.progress, dueDate: projectRoles.dueDate, deliveredAt: projectRoles.deliveredAt, projectId: projects.id, project: projects.name })
+    db.select({ id: projectRoles.id, title: projectRoles.title, progress: projectRoles.progress, dueDate: projectRoles.dueDate, deliveredAt: projectRoles.deliveredAt, projectId: projects.id, project: projects.name,
+      deadlineAt: projectRoles.deadlineAt, graceHours: projectRoles.graceHours, issuedAt: projectRoles.issuedAt, acceptedAt: projectRoles.acceptedAt, reviewStatus: projectRoles.reviewStatus, reworkDueAt: projectRoles.reworkDueAt, extStatus: projectRoles.extStatus })
       .from(roleMembers).innerJoin(projectRoles, eq(roleMembers.roleId, projectRoles.id)).innerJoin(projects, eq(projectRoles.projectId, projects.id))
       .where(and(eq(roleMembers.userId, u.id), inArray(projects.status, ["APPROVED", "IN_PROGRESS", "DELIVERED"]))),
     listTasks(u, { mine: true, open: true }), visibleProjects(u), myProjectIds(u.id), chatProjects(u),
@@ -87,7 +100,10 @@ async function TeamToday({ u, greet }: { u: SessionUser; greet: string }) {
   ]);
   const now = new Date();
   const items: Item[] = [
-    ...roles.filter((r) => !r.deliveredAt && r.dueDate && r.dueDate < now).map((r) => ({ level: "bad", title: <>{r.title} في {r.project} عدّى موعده</>, sub: `التقدم ${r.progress}%`, href: `/projects/${r.projectId}`, cta: "افتح" }) as Item),
+    ...roles.filter((r) => r.issuedAt && !r.acceptedAt).map((r) => ({ level: "bad", title: <>📋 أمر شغل جديد: {r.title}</>, sub: `${r.project} · اقرا التفاصيل ودوس «استلمت وفهمت»`, href: `/projects/${r.projectId}`, cta: "افتح" }) as Item),
+    ...roles.filter((r) => r.reviewStatus === "REWORK").map((r) => ({ level: "bad", title: <>🔁 {r.title} محتاج تعديل</>, sub: `${r.project} · لحد ${fmtCairo(r.reworkDueAt)}`, href: `/projects/${r.projectId}`, cta: "افتح" }) as Item),
+    ...roles.filter((r) => !r.deliveredAt && lateDaysFor(r) > 0).map((r) => ({ level: "bad", title: <>{r.title} في {r.project} متأخر {lateDaysFor(r)} يوم</>, sub: `الخصم بيزيد كل يوم. سلّم أو كلّم المدير.`, href: `/projects/${r.projectId}`, cta: "افتح" }) as Item),
+    ...roles.filter((r) => { const c = cutoff(r); return !r.deliveredAt && c && c > now && +c - +now < 2 * 864e5; }).map((r) => ({ level: "warn", title: <>⏰ {r.title} معاد تسليمه قرّب</>, sub: `${r.project} · ${fmtCairo(r.deadlineAt ?? r.dueDate)}`, href: `/projects/${r.projectId}`, cta: "افتح" }) as Item),
     ...myTasks.filter((t) => t.dueDate && t.dueDate < now).map((t) => ({ level: "warn", title: <>مهمة متأخرة: {t.title}</>, sub: t.project, href: "/tasks", cta: "المهام" }) as Item),
     ...chats.filter((c) => c.unread).map((c) => ({ level: "info", title: <>{c.unread} رسالة جديدة في {c.name}</>, href: `/chats/${c.id}`, cta: "افتح الشات" }) as Item),
   ];

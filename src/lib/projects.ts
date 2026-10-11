@@ -61,7 +61,11 @@ export async function loadTeamView(onlyActive = true) {
     .from(projects).orderBy(desc(projects.createdAt));
   const list = onlyActive ? ps.filter((p) => (ACTIVE as readonly string[]).includes(p.status)) : ps;
   if (!list.length) return [];
-  const roles = await db.select({ id: projectRoles.id, projectId: projectRoles.projectId, title: projectRoles.title, scope: projectRoles.scope, deliverables: projectRoles.deliverables, dueDate: projectRoles.dueDate, deliveredAt: projectRoles.deliveredAt, progress: projectRoles.progress, createdAt: projectRoles.createdAt })
+  const roles = await db.select({ id: projectRoles.id, projectId: projectRoles.projectId, title: projectRoles.title, scope: projectRoles.scope, deliverables: projectRoles.deliverables, dueDate: projectRoles.dueDate, deliveredAt: projectRoles.deliveredAt, progress: projectRoles.progress, createdAt: projectRoles.createdAt,
+      // work order (no money)
+      doneDefinition: projectRoles.doneDefinition, checklist: projectRoles.checklist, checklistDone: projectRoles.checklistDone, deadlineAt: projectRoles.deadlineAt, graceHours: projectRoles.graceHours,
+      issuedAt: projectRoles.issuedAt, acceptedAt: projectRoles.acceptedAt, extUntil: projectRoles.extUntil, extReason: projectRoles.extReason, extStatus: projectRoles.extStatus,
+      reviewStatus: projectRoles.reviewStatus, reviewNote: projectRoles.reviewNote, reworkDueAt: projectRoles.reworkDueAt })
     .from(projectRoles).where(inArray(projectRoles.projectId, list.map((p) => p.id)));
   const mems = roles.length ? await db.select({ roleId: roleMembers.roleId, userId: roleMembers.userId, isLead: roleMembers.isLead, name: users.name })
     .from(roleMembers).innerJoin(users, eq(roleMembers.userId, users.id)).where(inArray(roleMembers.roleId, roles.map((r) => r.id))) : [];

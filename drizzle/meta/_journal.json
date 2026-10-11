@@ -43,6 +43,13 @@
       "when": 1791705437721,
       "tag": "0005_role_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791756425928,
+      "tag": "0006_work_orders",
+      "breakpoints": true
     }
   ]
 }

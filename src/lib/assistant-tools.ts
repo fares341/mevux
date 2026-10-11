@@ -72,7 +72,12 @@ export async function runTool(name: string, args: Record<string, unknown>, ctx: 
 
   switch (name) {
     case "my_work": {
-      const mine = (await loadTeamView(false)).flatMap((p) => p.roles.filter((r) => r.members.some((m) => m.userId === u.id)).map((r) => ({ project: p.name, projectStatus: STATUS[p.status], role: r.title, progress: r.progress, due: day(r.dueDate), delivered: !!r.deliveredAt })));
+      const { woState, WO_LABEL } = await import("./work-order");
+      const { cutoff, lateDaysFor: late } = await import("./finance");
+      const { fmtCairo } = await import("./tz");
+      const mine = (await loadTeamView(false)).flatMap((p) => p.roles.filter((r) => r.members.some((m) => m.userId === u.id)).map((r) => ({ project: p.name, projectStatus: STATUS[p.status], role: r.title, progress: r.progress,
+        workOrder: WO_LABEL[woState(r)], deadline: r.deadlineAt ? fmtCairo(r.deadlineAt) : day(r.dueDate), deductionsStartAfter: cutoff(r) ? fmtCairo(cutoff(r)) : undefined, daysLate: late(r) || undefined,
+        task: r.scope || undefined, checklist: r.checklist ? JSON.parse(r.checklist) : undefined, doneWhen: r.doneDefinition || undefined, delivered: !!r.deliveredAt })));
       const tasks = (await W.listTasks(u, { mine: true, open: true })).map((t) => ({ task: t.title, project: t.project, status: W.TASK_ST[t.status], due: day(t.dueDate) }));
       // Instructions the admin left on MY roles only.
       const { roleNotes, roleMembers: rm } = await import("./db");

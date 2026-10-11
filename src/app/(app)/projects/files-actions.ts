@@ -22,10 +22,11 @@ export async function uploadRoleFile(_: R, fd: FormData): Promise<R> {
   const err = checkFile(file); if (err) return { error: err };
   const s = await saveFile(file);
   await db.insert(projectFiles).values({ projectId: role.projectId, roleId, kind: "DELIVERABLE", uploadedBy: me.id, originalName: s.name, storedName: s.stored, size: s.size, mime: s.mime, note: String(fd.get("note") || "").slice(0, 500) || null });
-  if (fd.get("delivered") === "on") await db.update(projectRoles).set({ deliveredAt: role.deliveredAt ?? new Date(), progress: 100 }).where(eq(projectRoles.id, roleId));
+  // With a work order, handing in goes through "سلّمت" (checklist + review), not this checkbox.
+  if (fd.get("delivered") === "on" && !role.issuedAt) await db.update(projectRoles).set({ deliveredAt: role.deliveredAt ?? new Date(), progress: 100 }).where(eq(projectRoles.id, roleId));
   await audit(me.id, "file_upload", `${roleId} ${s.name}`);
   refresh(role.projectId);
-  return { ok: fd.get("delivered") === "on" ? "تم رفع الملف وتسجيل تسليم الدور." : "تم رفع الملف." };
+  return { ok: fd.get("delivered") === "on" && !role.issuedAt ? "تم رفع الملف وتسجيل تسليم الدور." : role.issuedAt ? "تم رفع الملف. لما تخلّص دوس «سلّمت» في أمر الشغل." : "تم رفع الملف." };
 }
 
 export async function uploadFinalFile(_: R, fd: FormData): Promise<R> {

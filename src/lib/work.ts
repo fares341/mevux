@@ -4,6 +4,7 @@ import { db, users, projects, projectRoles, roleMembers, tasks, updates, complai
 import type { SessionUser } from "./auth";
 import { audit } from "./audit";
 import { getSettings } from "./settings";
+import { lateDaysFor } from "./finance";
 
 // Every function here takes the signed-in user and enforces permissions itself,
 // so the web pages and the assistant share exactly the same rules.
@@ -109,9 +110,9 @@ export async function followUp(u: SessionUser) {
   const ids = active.map((p) => p.id);
   const roles = ids.length ? await db.select({ r: projectRoles, userId: roleMembers.userId, name: users.name }).from(projectRoles)
     .innerJoin(roleMembers, eq(roleMembers.roleId, projectRoles.id)).innerJoin(users, eq(roleMembers.userId, users.id)).where(inArray(projectRoles.projectId, ids)) : [];
-  const lateRoles = roles.filter((x) => x.r.dueDate && !x.r.deliveredAt && x.r.dueDate < now).map((x) => ({
+  const lateRoles = roles.filter((x) => !x.r.deliveredAt && lateDaysFor(x.r, now) > 0).map((x) => ({
     project: active.find((p) => p.id === x.r.projectId)?.name, role: x.r.title, person: x.name,
-    days: Math.floor((+now - +x.r.dueDate!) / 86400000), progress: x.r.progress,
+    days: lateDaysFor(x.r, now), progress: x.r.progress,
   }));
   const overdueTasks = (await listTasks(u, { open: true })).filter((t) => t.dueDate && t.dueDate < now);
   const today = await db.selectDistinct({ userId: updates.userId }).from(updates).where(gte(updates.createdAt, startOfDay()));
