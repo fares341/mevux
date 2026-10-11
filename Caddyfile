@@ -1,0 +1,9 @@
+{$SITE_ADDRESS} {
+	# With a domain: delete the "tls internal" line and Caddy gets a free trusted certificate automatically.
+	tls internal
+	encode gzip
+	request_body {
+		max_size 25MB
+	}
+	reverse_proxy app:3000
+}

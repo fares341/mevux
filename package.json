@@ -1,0 +1,31 @@
+{
+  "name": "mevix-system",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:push": "drizzle-kit push --force",
+    "seed": "tsx scripts/seed.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "2.4.3",
+    "drizzle-orm": "0.45.4",
+    "jose": "5.9.6",
+    "next": "16.4.0",
+    "pg": "8.13.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "server-only": "0.0.1",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
+    "@types/node": "22.9.0",
+    "@types/pg": "8.11.10",
+    "@types/react": "19.2.0",
+    "drizzle-kit": "0.31.11",
+    "tsx": "4.19.2",
+    "typescript": "5.6.3"
+  }
+}

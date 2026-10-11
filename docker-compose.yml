@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mevix
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: mevix
+    volumes: [dbdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U mevix"], interval: 5s, retries: 10 }
+    # no ports published: the database is not reachable from the internet
+
+  app:
+    build: { context: ., target: run }
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://mevix:${DB_PASSWORD}@db:5432/mevix
+    depends_on: { db: { condition: service_healthy } }
+
+  tools:
+    build: { context: ., target: tools }
+    profiles: ["tools"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://mevix:${DB_PASSWORD}@db:5432/mevix
+    depends_on: { db: { condition: service_healthy } }
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS}
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro, caddydata:/data]
+    depends_on: [app]
+
+volumes: { dbdata: {}, caddydata: {} }
