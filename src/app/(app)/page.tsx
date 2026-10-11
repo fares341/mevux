@@ -1,39 +1,116 @@
-import { requireUser } from "@/lib/auth";
-import { eq, count, sum } from "drizzle-orm";
-import { db, users, suppliers, fixedCosts, clients } from "@/lib/db";
-import { and, asc, isNotNull, notInArray } from "drizzle-orm";
 import Link from "next/link";
-import { STAGES } from "@/lib/labels";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lte, ne, notInArray } from "drizzle-orm";
+import { requireUser, type SessionUser } from "@/lib/auth";
+import { db, users, suppliers, clients, complaints, deductions, tasks, projectRoles, roleMembers, projects } from "@/lib/db";
+import { stageLabel } from "@/lib/labels";
+import { Icon, PageHead } from "@/components/ui";
+import { egp } from "@/lib/finance";
+import { chatProjects } from "@/lib/chat";
+import { UpdateForm } from "./work-forms";
+
+const day = (d: Date) => d.toLocaleDateString("ar-EG", { weekday: "short", day: "numeric", month: "short" });
+const startToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+type Item = { level: "bad" | "warn" | "info"; title: React.ReactNode; sub?: string; href: string; cta: string };
+
 export default async function Home() {
   const u = await requireUser();
-  const admin = u.role === "ADMIN";
-  const [members, supplierCount, fixed] = admin ? await Promise.all([
-    db.select({ n: count() }).from(users).where(eq(users.active, true)).then((r) => r[0].n),
-    db.select({ n: count() }).from(suppliers).then((r) => r[0].n),
-    db.select({ s: sum(fixedCosts.amountEgp) }).from(fixedCosts).where(eq(fixedCosts.active, true)).then((r) => Number(r[0].s ?? 0)),
-  ]) : [0, 0, 0];
+  const greet = new Date().getHours() < 12 ? "صباح الخير" : "مساء الخير";
+  const first = u.name.split(" ")[0];
+  return u.role === "ADMIN" ? <AdminToday u={u} greet={`${greet} يا ${first}`} /> : <TeamToday u={u} greet={`${greet} يا ${first}`} />;
+}
+
+function Attention({ items, emptyText }: { items: Item[]; emptyText: string }) {
+  return (<section className="card"><h2>محتاج انتباهك</h2>
+    {items.length ? <ul className="attn">{items.map((x, i) => <li key={i}><span className={"k " + x.level} /><span className="t"><b>{x.title}</b>{x.sub && <small>{x.sub}</small>}</span><Link className="btn secondary sm" href={x.href}>{x.cta}</Link></li>)}</ul>
+      : <p className="sub">{emptyText}</p>}
+  </section>);
+}
+
+async function AdminToday({ u, greet }: { u: SessionUser; greet: string }) {
+  const { dueSubscriptions } = await import("@/lib/subscriptions");
+  const { followUp } = await import("@/lib/work");
+  const { cashflow } = await import("@/lib/cashflow");
+  const today = startToday(), in2 = new Date(+today + 2 * 864e5);
+  const [subs, f, cf, follow, openC, pendD, chats] = await Promise.all([
+    dueSubscriptions(), followUp(u), cashflow(1),
+    db.select().from(clients).where(and(isNotNull(clients.nextDate), lte(clients.nextDate, in2), notInArray(clients.stage, ["LOST", "DONE"]))).orderBy(asc(clients.nextDate)),
+    db.select({ id: complaints.id }).from(complaints).where(inArray(complaints.status, ["OPEN", "ANSWERED"])),
+    db.select({ id: deductions.id }).from(deductions).where(eq(deductions.status, "PENDING")),
+    chatProjects(u),
+  ]);
+  const items: Item[] = [
+    ...subs.map((x) => ({ level: x.overdue ? "bad" : "warn", title: <>اشتراك {x.name} · <span className="num">{x.fee.toLocaleString("en-US")}</span> {x.currency === "EGP" ? "ج" : x.currency === "SAR" ? "ريال" : "$"}</>, sub: `${x.client} · ${x.overdue ? `متأخر ${-x.days} يوم` : x.days === 0 ? "مستحق النهارده" : `مستحق بعد ${x.days} يوم`}`, href: `/projects/${x.id}?tab=money`, cta: "سجّل الدفعة" }) as Item),
+    ...follow.map((c) => ({ level: c.nextDate! < today ? "bad" : "info", title: <>متابعة {c.name}: {c.nextStep || stageLabel(c)}</>, sub: `${day(c.nextDate!)} · ${stageLabel(c)}`, href: `/clients/${c.id}`, cta: "افتح العميل" }) as Item),
+    ...f.lateRoles.map((x) => ({ level: "bad", title: <>{x.person} متأخر في {x.role}</>, sub: `${x.project} · ${x.days} يوم · ${x.progress}%`, href: "/follow", cta: "المتابعة" }) as Item),
+    ...(f.overdueTasks.length ? [{ level: "warn", title: <>{f.overdueTasks.length} مهمة فات موعدها</>, href: "/tasks?view=all", cta: "المهام" } as Item] : []),
+    ...(openC.length ? [{ level: "warn", title: <>{openC.length} شكوى مستنية قرارك</>, href: "/complaints", cta: "الشكاوى" } as Item] : []),
+    ...(pendD.length ? [{ level: "warn", title: <>{pendD.length} خصم قيد المراجعة</>, href: "/projects", cta: "المشاريع" } as Item] : []),
+    ...(f.silent.length ? [{ level: "info", title: <>ماكتبوش تحديث النهارده: {f.silent.join("، ")}</>, href: "/follow", cta: "المتابعة" } as Item] : []),
+    ...chats.filter((c) => c.unread).slice(0, 3).map((c) => ({ level: "info", title: <>{c.unread} رسالة جديدة في {c.name}</>, sub: c.last ? `${c.last.name}: ${c.last.text || c.last.fileName}` : undefined, href: `/chats/${c.id}`, cta: "افتح الشات" }) as Item),
+  ];
+  const m = cf.months[cf.months.length - 1];
   return (<>
-    <div className="head"><div><span className="tag">الرئيسية</span><h1>أهلاً {u.name}</h1><p className="sub">لوحة متابعة MEVIX.</p></div></div>
-    {admin && <div className="grid">
-      <div className="stat"><b>{members}</b><span>موظف نشط</span></div>
-      <div className="stat"><b>{supplierCount}</b><span>خدمة مسجلة عند الموردين</span></div>
-      <div className="stat"><b className="num">{fixed.toLocaleString("en-US")} ج</b><span>المصاريف الثابتة شهرياً</span></div>
-    </div>}
-    {admin && <SubscriptionAlerts />}
-    {admin && <GettingStarted />}
-    {admin && <FollowUps />}
+    <PageHead title={greet} help="ده اللي محتاج تعمله النهارده، وتحت أرقام الشهر. أي حاجة تقدر تقولها للمساعد وهو ينفّذ." />
+    <div className="quick">
+      <Link href="/clients?new=1"><Icon name="users" />عميل جديد</Link>
+      <Link href="/projects?tab=new"><Icon name="folder" />مشروع جديد</Link>
+      <Link href="/briefs"><Icon name="doc" />اعمل بريف</Link>
+      <Link href="/finance?tab=expenses"><Icon name="wallet" />سجّل مصروف</Link>
+      <Link href="/assistant"><Icon name="spark" />قول للمساعد</Link>
+    </div>
+    <div className="cols">
+      <div><Attention items={items} emptyText="مفيش حاجة متأخرة أو مستنياك. يوم هادي 👌" /><GettingStarted /></div>
+      <div>
+        <section className="card"><h2>الشهر ده</h2>
+          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", marginBottom: 0 }}>
+            <div className="stat"><b className="num">{egp(m.income)}</b><span>دخل</span></div>
+            <div className="stat"><b className="num">{egp(m.out)}</b><span>مصروف</span></div>
+            <div className="stat" style={{ borderBottomColor: m.net < 0 ? "var(--bad)" : "var(--ok)" }}><b className="num">{egp(m.net)}</b><span>صافي</span></div>
+            <div className="stat"><b className="num">{egp(cf.mrr)}</b><span>اشتراكات شهرية</span></div>
+          </div>
+          <p className="sub" style={{ marginBottom: 0 }}><Link href="/finance">التفاصيل في المالية</Link></p>
+        </section>
+      </div>
+    </div>
   </>);
 }
 
-async function FollowUps() {
-  const rows = await db.select().from(clients).where(and(isNotNull(clients.nextDate), notInArray(clients.stage, ["LOST", "DONE"]))).orderBy(asc(clients.nextDate)).limit(12);
-  const t = new Date(); t.setHours(0, 0, 0, 0);
-  return (<section className="card"><h2>متابعات العملاء الجاية</h2>
-    {rows.length ? rows.map((c) => <div key={c.id} className="actions" style={{ justifyContent: "space-between", borderBottom: "1px solid var(--line)", paddingBlock: 8 }}>
-      <span><Link href={`/clients/${c.id}`}><b>{c.name}</b></Link> · {c.nextStep || STAGES[c.stage]}</span>
-      <span className={c.nextDate! < t ? "pill bad" : "pill info"}>{c.nextDate!.toLocaleDateString("ar-EG", { weekday: "short", day: "numeric", month: "short" })}</span></div>)
-      : <p className="sub">مفيش متابعات متحددة. سجّل الخطوة الجاية وموعدها من صفحة العميل.</p>}
-  </section>);
+async function TeamToday({ u, greet }: { u: SessionUser; greet: string }) {
+  const { listTasks, visibleProjects, myProjectIds } = await import("@/lib/work");
+  const { feed } = await import("@/lib/work");
+  const [roles, myTasks, vis, mine, chats, today] = await Promise.all([
+    db.select({ id: projectRoles.id, title: projectRoles.title, progress: projectRoles.progress, dueDate: projectRoles.dueDate, deliveredAt: projectRoles.deliveredAt, projectId: projects.id, project: projects.name })
+      .from(roleMembers).innerJoin(projectRoles, eq(roleMembers.roleId, projectRoles.id)).innerJoin(projects, eq(projectRoles.projectId, projects.id))
+      .where(and(eq(roleMembers.userId, u.id), inArray(projects.status, ["APPROVED", "IN_PROGRESS", "DELIVERED"]))),
+    listTasks(u, { mine: true, open: true }), visibleProjects(u), myProjectIds(u.id), chatProjects(u),
+    feed(u, { userId: u.id, since: startToday(), limit: 1 }),
+  ]);
+  const now = new Date();
+  const items: Item[] = [
+    ...roles.filter((r) => !r.deliveredAt && r.dueDate && r.dueDate < now).map((r) => ({ level: "bad", title: <>{r.title} في {r.project} عدّى موعده</>, sub: `التقدم ${r.progress}%`, href: `/projects/${r.projectId}`, cta: "افتح" }) as Item),
+    ...myTasks.filter((t) => t.dueDate && t.dueDate < now).map((t) => ({ level: "warn", title: <>مهمة متأخرة: {t.title}</>, sub: t.project, href: "/tasks", cta: "المهام" }) as Item),
+    ...chats.filter((c) => c.unread).map((c) => ({ level: "info", title: <>{c.unread} رسالة جديدة في {c.name}</>, href: `/chats/${c.id}`, cta: "افتح الشات" }) as Item),
+  ];
+  const myProjects = vis.filter((p) => mine.includes(p.id));
+  return (<>
+    <PageHead title={greet} help="أدوارك ومهامك النهارده. اكتب وصلت لإيه آخر اليوم، أو قوله للمساعد بالفويس." />
+    <div className="cols">
+      <div>
+        <Attention items={items} emptyText="مفيش حاجة متأخرة. كمّل 💪" />
+        <section className="card"><h2>أدواري</h2>
+          {roles.length ? <ul className="attn">{roles.map((r) => <li key={r.id}><span className={"k " + (r.deliveredAt ? "info" : r.dueDate && r.dueDate < now ? "bad" : "warn")} />
+            <span className="t"><b>{r.title} · {r.project}</b><small>{r.deliveredAt ? "اتسلّم" : r.dueDate ? `الموعد ${day(r.dueDate)}` : "مفيش موعد"} · {r.progress}%</small></span>
+            <Link className="btn secondary sm" href={`/projects/${r.projectId}`}>افتح</Link></li>)}</ul> : <p className="sub">مفيش أدوار شغالة دلوقتي.</p>}
+        </section>
+        <section className="card"><h2>مهامي المفتوحة</h2>
+          {myTasks.length ? <ul className="attn">{myTasks.map((t) => <li key={t.id}><span className="k info" /><span className="t"><b>{t.title}</b><small>{t.project}{t.dueDate ? ` · ${day(t.dueDate)}` : ""}</small></span><Link className="btn secondary sm" href="/tasks">حدّث</Link></li>)}</ul> : <p className="sub">مفيش مهام مفتوحة.</p>}
+        </section>
+      </div>
+      <div>
+        <section className="card"><h2>{today.length ? "سجّلت تحديث النهارده ✓" : "وصلت لإيه النهارده؟"}</h2><UpdateForm projects={myProjects.map((p) => ({ id: p.id, name: p.name }))} /></section>
+      </div>
+    </div>
+  </>);
 }
 
 async function GettingStarted() {
@@ -66,17 +143,3 @@ async function GettingStarted() {
   </section>);
 }
 
-async function SubscriptionAlerts() {
-  const { dueSubscriptions } = await import("@/lib/subscriptions");
-  const due = await dueSubscriptions();
-  if (!due.length) return null;
-  const CUR: Record<string, string> = { EGP: "ج", SAR: "ريال", USD: "$" };
-  return (<section className="card" style={{ borderTopColor: due.some((x) => x.overdue) ? "var(--bad)" : "var(--warn)" }}>
-    <h2>مواعيد دفع الاشتراكات</h2>
-    {due.map((x) => <div key={x.id} className="actions" style={{ justifyContent: "space-between", borderBottom: "1px solid var(--line)", paddingBlock: 8 }}>
-      <span><Link href={`/projects/${x.id}`}><b>{x.name}</b></Link> · {x.client} · <span className="num">{x.fee.toLocaleString("en-US")}</span> {CUR[x.currency]}</span>
-      <span className={"pill " + (x.overdue ? "bad" : "warn")}>{x.overdue ? `متأخر ${-x.days} يوم` : x.days === 0 ? "النهارده" : `بعد ${x.days} يوم`} · {x.due.toLocaleDateString("ar-EG", { day: "numeric", month: "short" })}</span>
-    </div>)}
-    <p className="sub">لما الدفعة توصل سجّلها في المشروع، والميعاد بيتنقل للشهر الجاي لوحده.</p>
-  </section>);
-}

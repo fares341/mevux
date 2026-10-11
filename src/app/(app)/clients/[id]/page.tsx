@@ -10,12 +10,14 @@ import { egp } from "@/lib/finance";
 import { StageLog, EditClient, ClientFileForm, InstallmentForm } from "../forms";
 import { deleteClient, deleteClientFile, deleteInstallment, togglePaid } from "../actions";
 import { ClientAssets } from "../../projects/assets";
+import { PageHead, Tabs } from "@/components/ui";
 
 const CUR: Record<string, string> = { EGP: "ج", SAR: "ريال", USD: "$" };
 const KIND: Record<string, string> = { BRIEF: "بريف", CONTRACT: "عقد", OTHER: "ملف" };
 const fmt = (x: Date | null) => (x ? x.toLocaleDateString("ar-EG", { day: "numeric", month: "short", year: "numeric" }) : "—");
 
-export default async function ClientPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ClientPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
+  const tab = (await searchParams).tab || "overview";
   await requireAdmin();
   const { id } = await params;
   const c = await db.query.clients.findFirst({ where: eq(clients.id, id) });
@@ -32,9 +34,17 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
   const names = byIds.length ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, byIds)) : [];
   const idx = STAGE_ORDER.indexOf(c.stage as (typeof STAGE_ORDER)[number]);
   return (<>
-    <div className="head"><div><span className="tag">العملاء</span><h1>{c.name}</h1><p className="sub">{[c.company, c.country].filter(Boolean).join(" · ")}{c.phone && <> · <bdi dir="ltr">{c.phone}</bdi></>}{c.email && <> · <bdi dir="ltr">{c.email}</bdi></>}</p></div>
-      <div className="actions">{ps[0] && <Link className="btn" style={{ background: "var(--pink)" }} href={`/briefs?project=${ps[0].id}`}>عمل بريف</Link>}<Link className="btn" href={`/projects?tab=new&client=${c.id}`}>+ مشروع للعميل ده</Link></div></div>
-
+    <PageHead title={c.name} crumbs={[{ href: "/clients", label: "العملاء" }]} badge={<span className={"pill " + (c.stage === "LOST" ? "bad" : ["AGREED", "ACTIVE", "DONE"].includes(c.stage) ? "ok" : "info")}>{stageLabel(c)}</span>}
+      help={<>{[c.company, c.country].filter(Boolean).join(" · ")}{c.phone && <> · <bdi dir="ltr">{c.phone}</bdi></>}{c.email && <> · <bdi dir="ltr">{c.email}</bdi></>}</>}
+      actions={[...(ps[0] ? [{ href: `/briefs?project=${ps[0].id}`, label: "عمل بريف", icon: "doc", kind: "accent" as const }] : []), { href: `/projects?tab=new&client=${c.id}`, label: "مشروع للعميل ده", icon: "plus" }]} />
+    <Tabs base={`/clients/${c.id}`} current={tab} tabs={[
+      { key: "overview", label: "المرحلة والسجل" },
+      { key: "payments", label: "اتفاق الدفعات", count: plan.filter((x) => !x.paidAt).length },
+      { key: "files", label: "الملفات والأنظمة", count: files.length },
+      { key: "projects", label: "المشاريع", count: ps.length },
+      { key: "details", label: "بيانات العميل" },
+    ]} />
+    {tab === "overview" && <>
     <div className="pipeline">
       {STAGE_ORDER.map((s, i) => <div key={s} className={"step" + (i < idx ? " past" : i === idx ? " on" : "")}><span className="n num">{i + 1}</span><b>{STAGES[s]}</b></div>)}
     </div>
@@ -49,6 +59,16 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
 
     <section className="card"><h2>تسجيل تحديث</h2><StageLog c={c} /></section>
 
+    <section className="card"><h2>السجل</h2>
+      {events.map((e) => <div key={e.id} style={{ borderRight: "3px solid var(--cyan)", paddingInline: 12, marginBottom: 12 }}>
+        <div className="sub" style={{ margin: 0 }}>{fmt(e.createdAt)} · {names.find((n) => n.id === e.by)?.name || ""}</div>
+        {e.stage && <span className="pill info">← {STAGES[e.stage]}</span>} {e.customStage && <span className="pill warn">{e.customStage}</span>}
+        {e.note && <p style={{ margin: "4px 0", whiteSpace: "pre-wrap" }}>{e.note}</p>}
+      </div>)}
+    </section>
+
+    </>}
+    {tab === "payments" && <>
     <section className="card"><h2>اتفاق الدفعات</h2>
       {plan.length > 0 && <div className="table-wrap" style={{ marginBottom: 14 }}><table>
         <thead><tr><th>اتدفعت؟</th><th>الدفعة</th><th>المبلغ</th><th>إمتى</th><th>المشروع</th><th></th></tr></thead>
@@ -60,6 +80,8 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
       <details open={!plan.length}><summary>إضافة دفعة للاتفاق</summary><div style={{ marginTop: 12 }}><InstallmentForm clientId={c.id} projects={ps.map((p) => ({ id: p.id, name: p.name, currency: p.currency }))} /></div></details>
     </section>
 
+    </>}
+    {tab === "files" && <>
     <section className="card"><h2>ملف العميل</h2>
       {files.length ? files.map((f) => <div key={f.id} className="actions" style={{ justifyContent: "space-between", borderBottom: "1px solid var(--line)", paddingBlock: 6 }}>
         <span><span className="pill info">{KIND[f.kind] || "ملف"}</span> <a href={`/api/client-files/${f.id}`} target="_blank" rel="noopener"><b>{f.originalName}</b></a> <span className="sub">· {fmt(f.createdAt)}{f.note ? ` · ${f.note}` : ""}</span></span>
@@ -67,21 +89,18 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
       <div style={{ marginTop: 12 }}><ClientFileForm clientId={c.id} /></div>
     </section>
 
-    <section className="card"><h2>السجل</h2>
-      {events.map((e) => <div key={e.id} style={{ borderRight: "3px solid var(--cyan)", paddingInline: 12, marginBottom: 12 }}>
-        <div className="sub" style={{ margin: 0 }}>{fmt(e.createdAt)} · {names.find((n) => n.id === e.by)?.name || ""}</div>
-        {e.stage && <span className="pill info">← {STAGES[e.stage]}</span>} {e.customStage && <span className="pill warn">{e.customStage}</span>}
-        {e.note && <p style={{ margin: "4px 0", whiteSpace: "pre-wrap" }}>{e.note}</p>}
-      </div>)}
-    </section>
-
     <ClientAssets clientId={c.id} />
 
+    </>}
+    {tab === "projects" && <>
     <section className="card"><h2>المشاريع</h2>
       {ps.length ? ps.map((p) => <div key={p.id}><Link href={`/projects/${p.id}`}><b>{p.name}</b></Link> · {STATUS[p.status]} · <span className="num">{egp(p.price)}</span> {CUR[p.currency]}</div>) : <p className="sub">مفيش مشاريع لسه.</p>}
     </section>
 
-    <section className="card"><details><summary>بيانات العميل</summary><div style={{ marginTop: 12 }}><EditClient c={c} /></div></details></section>
+    </>}
+    {tab === "details" && <>
+    <section className="card"><details open><summary>بيانات العميل</summary><div style={{ marginTop: 12 }}><EditClient c={c} /></div></details></section>
     <form action={deleteClient} className="actions"><input type="hidden" name="id" value={c.id} /><input id="del-client" name="confirm" placeholder='اكتب "حذف" لحذف العميل' style={{ maxWidth: 220 }} /><button className="sm danger">حذف العميل</button></form>
+    </>}
   </>);
 }

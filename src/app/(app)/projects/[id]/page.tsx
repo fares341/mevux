@@ -11,6 +11,7 @@ import { EditProject, PaymentForm, CostForm, RoleForm, DeductionForm } from "../
 import { RoleUpload } from "../files-ui";
 import { ProjectAssets } from "../assets";
 import { KINDS } from "@/lib/labels";
+import { PageHead, Tabs, Empty } from "@/components/ui";
 import { BriefForm } from "../brief-ui";
 import { deleteBrief } from "../brief-actions";
 import { projectBriefs } from "@/lib/db";
@@ -26,8 +27,9 @@ function Progress({ roleId, value, canEdit }: { roleId: string; value: number; c
     <input aria-label="التقدم" id={"pg-" + roleId} name="progress" type="number" min="0" max="100" dir="ltr" defaultValue={value} style={{ maxWidth: 80 }} />%<button className="sm ghost">تحديث</button></form>);
 }
 
-export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ProjectPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
+  const tab = (await searchParams).tab || "overview";
   const me = await requireUser();
 
   // ---------- Team member / team lead view: no money at all ----------
@@ -37,7 +39,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     if (!p || (!(ACTIVE as readonly string[]).includes(p.status) && !mine)) notFound();
     const files = mine ? await loadFiles(p.id) : [];
     return (<>
-      <div className="head"><div><span className="tag">{STATUS[p.status]}</span><h1>{p.name}</h1><p className="sub">{p.client} · التسليم {fmt(p.dueDate)}</p></div>{mine && <Link className="btn" href={`/chats/${p.id}`}>شات المشروع</Link>}</div>
+      <PageHead title={p.name} crumbs={[{ href: "/projects", label: "المشاريع" }]} badge={<span className="pill info">{STATUS[p.status]}</span>}
+        help={<>{p.client} · التسليم {fmt(p.dueDate)}. حدّث تقدمك وارفع ملفك من كارت دورك.</>} actions={mine ? [{ href: `/chats/${p.id}`, label: "شات المشروع", icon: "chat" }] : undefined} />
       {p.description && <div className="note" style={{ whiteSpace: "pre-wrap" }}>{p.description}</div>}
       {p.roles.map((r) => { const own = r.members.some((m) => m.userId === me.id); return (
         <section className="card" key={r.id} style={own ? { borderTopColor: "var(--cyan)" } : undefined}>
@@ -72,9 +75,19 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const allDeds = p.roles.flatMap((ro) => ro.deductions.map((dd) => ({ ...dd, role: ro.title })));
 
   return (<>
-    <div className="head"><div><span className="tag">{STATUS[p.status]} · {SIZE[p.size]}</span><h1>{p.name}</h1><p className="sub">{p.client} · <span className="num">{egp(p.price)}</span> {CUR[p.currency]}{p.currency !== "EGP" && <> × <span className="num">{p.rate}</span></>}{p.kinds && <> · {p.kinds.split(",").map((k) => <span key={k} className="pill info" style={{ marginInlineEnd: 4 }}>{KINDS[k as keyof typeof KINDS]}</span>)}</>}{p.billing === "SUBSCRIPTION" && <> · <span className="pill info">اشتراك <span className="num">{egp(p.monthlyFee ?? 0)}</span> {CUR[p.currency]} / شهر</span></>}</p></div>
-      <div className="actions"><Link className="btn ghost-link" href={`/chats/${p.id}`}>شات المشروع</Link><Link className="btn" style={{ background: "var(--pink)" }} href={`/briefs?project=${p.id}`}>عمل بريف</Link></div></div>
-
+    <PageHead title={p.name} crumbs={[{ href: "/projects", label: "المشاريع" }, ...(p.clientId ? [{ href: `/clients/${p.clientId}`, label: p.client }] : [])]}
+      badge={<span className={"pill " + (p.status === "CLOSED" ? "ok" : p.status === "CANCELLED" ? "bad" : "info")}>{STATUS[p.status]}</span>}
+      help={<>{p.client} · <span className="num">{egp(p.price)}</span> {CUR[p.currency]}{p.billing === "SUBSCRIPTION" && <> · اشتراك <span className="num">{egp(p.monthlyFee ?? 0)}</span> {CUR[p.currency]} / شهر</>}{p.kinds && <> · {p.kinds.split(",").map((k) => KINDS[k as keyof typeof KINDS]).join("، ")}</>}</>}
+      actions={[{ href: `/chats/${p.id}`, label: "شات المشروع", icon: "chat", kind: "secondary" }, { href: `/briefs?project=${p.id}`, label: "عمل بريف", icon: "doc", kind: "accent" }]} />
+    <Tabs base={`/projects/${p.id}`} current={tab} tabs={[
+      { key: "overview", label: "نظرة عامة" },
+      { key: "team", label: "الفريق والأدوار", count: p.roles.length, alert: allDeds.some((d) => d.status === "PENDING") },
+      { key: "money", label: "الفلوس", alert: c.overCap, count: c.overCap ? 1 : undefined },
+      { key: "files", label: "الملفات والأنظمة" },
+      { key: "brief", label: "البريف", count: briefs.length },
+      { key: "details", label: "بيانات المشروع" },
+    ]} />
+    {tab === "overview" && <>
     <div className="grid">
       <div className="stat"><b className="num">{egp(c.revenue)}</b><span>قيمة المشروع (ج)</span></div>
       <div className="stat"><b className="num">{egp(c.received)}</b><span>المدفوع · الباقي <span className="num">{egp(c.remaining)}</span></span></div>
@@ -83,14 +96,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     </div>
     {c.overCap && <div className="msg bad">أجور الفريق ({egp(c.teamGross)} ج) أعلى من السقف المسموح ({egp(c.capLimit)} ج). قلّل الأجور أو عدد الأشخاص، أو ارفع السعر.</div>}
 
-    <div className="card plain"><h2>الحسبة</h2><div className="table-wrap"><table><tbody>
-      <tr><td>قيمة المشروع</td><td><span className="num">{egp(c.revenue)}</span> ج</td></tr>
-      <tr><td>− التكاليف المباشرة</td><td><span className="num">{egp(c.costs)}</span> ج</td></tr>
-      <tr><td>− صندوق الاشتراكات {p.fundPct}%</td><td><span className="num">{egp(c.fund)}</span> ج</td></tr>
-      <tr><td>− أجور الفريق بعد الخصومات {c.deductedTotal > 0 && <span className="sub">(اتخصم <span className="num">{egp(c.deductedTotal)}</span>)</span>}</td><td><span className="num">{egp(c.teamNet)}</span> ج</td></tr>
-      <tr><td><b>= الصافي</b> ← ليك {p.ownerPct}% · للشركة {100 - p.ownerPct}%</td><td><b className="num">{egp(c.net)}</b> ج</td></tr>
-    </tbody></table></div></div>
-
+    
+      {p.description && <div className="note" style={{ whiteSpace: "pre-wrap" }}>{p.description}</div>}
+      <section className="card"><h2>الأدوار</h2>
+        {p.roles.length ? <ul className="attn">{p.roles.map((ro) => <li key={ro.id}><span className={"k " + (ro.deliveredAt ? "info" : ro.dueDate && ro.dueDate < new Date() ? "bad" : "warn")} />
+          <span className="t"><b>{ro.title}</b><small>{ro.members.map((m) => name(m.userId)).join("، ")} · {ro.deliveredAt ? "اتسلّم" : `${ro.progress}%`}{ro.dueDate && !ro.deliveredAt ? ` · ${fmt(ro.dueDate)}` : ""}</small></span></li>)}</ul>
+          : <Empty title="لسه مفيش أدوار" text="وزّع الشغل على الفريق: الدور، الأجر، والموعد." action={{ href: `/projects/${p.id}?tab=team`, label: "إضافة دور", icon: "plus" }} />}
+      </section>
+    </>}
+    {tab === "team" && <>
     <section className="card"><h2>الأدوار وملفاتها</h2>
       {p.roles.map((ro) => { const lines = c.lines.filter((l) => l.roleId === ro.id); return (
         <div key={ro.id} style={{ borderBottom: "1px solid var(--line)", paddingBlock: 14 }}>
@@ -120,19 +134,6 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       {openBans.length > 0 && <p className="sub">محرومين من المشروع ده: {openBans.map((b) => name(b.userId)).join("، ")}</p>}
     </section>
 
-    <section className="card" style={{ borderTopColor: "var(--pink)" }}><h2>البريف</h2>
-      {briefs.map((b) => <div key={b.id} className="actions" style={{ justifyContent: "space-between", borderBottom: "1px solid var(--line)", paddingBlock: 6 }}>
-        <span><a href={`/api/briefs/${b.id}`} target="_blank" rel="noopener"><b>بريف {b.lang === "ar" ? "عربي" : "English"}</b></a> <span className="sub">· {b.createdAt.toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span></span>
-        <form action={deleteBrief}><input type="hidden" name="id" value={b.id} /><button className="sm ghost">حذف</button></form></div>)}
-      <div style={{ marginTop: 14 }}><b style={{ color: "var(--navy)" }}>توليد بريف جديد</b><div style={{ marginTop: 10 }}>
-        <BriefForm projectId={p.id} currency={CUR[p.currency]} hint={p.description || "مثال: الفرعين بيستخدموا كاشيرين، 90% من العملاء بيجوا من الخرايط…"} suppliers={sups.map((s) => ({ id: s.id, label: `${s.provider} · ${s.item} (${s.price} ${CUR[s.currency]} ${BILLING[s.billing]})` }))} />
-      </div></div>
-    </section>
-
-    <ProjectAssets projectId={p.id} admin />
-    <Credentials projectId={p.id} me={me} />
-    <FinalFiles files={files} me={me} projectId={p.id} />
-
     <section className="card"><h2>الخصومات</h2>
       {allDeds.length > 0 && <div className="table-wrap" style={{ marginBottom: 14 }}><table>
         <thead><tr><th>الشخص</th><th>الدور</th><th>النوع</th><th>النسبة</th><th>السبب والدليل</th><th>رده</th><th>الحالة</th></tr></thead>
@@ -145,6 +146,26 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
             : dd.status === "APPROVED" ? <span className="pill bad">معتمد</span> : <span className="pill ok">مرفوض</span>}</td></tr>)}</tbody></table></div>}
       {p.roles.length ? <details><summary>تسجيل خصم</summary><div style={{ marginTop: 12 }}><DeductionForm projectId={p.id} rates={r} roles={p.roles.map((ro) => ({ id: ro.id, title: ro.title, members: ro.members.map((m) => ({ userId: m.userId, name: name(m.userId) })) }))} /></div></details> : <p className="sub">أضف الأدوار الأول.</p>}
     </section>
+
+    </>}
+    {tab === "money" && <>
+    <div className="grid">
+      <div className="stat"><b className="num">{egp(c.revenue)}</b><span>قيمة المشروع (ج)</span></div>
+      <div className="stat"><b className="num">{egp(c.received)}</b><span>المدفوع · الباقي <span className="num">{egp(c.remaining)}</span></span></div>
+      <div className="stat" style={c.overCap ? { borderBottomColor: "var(--bad)" } : undefined}><b className="num">{egp(c.teamGross)}</b><span>أجور الفريق · <span className="num">{Number.isFinite(c.teamPctOfNet) ? c.teamPctOfNet.toFixed(0) : "∞"}%</span> من السقف {p.teamCapPct}%</span></div>
+      <div className="stat"><b className="num" style={{ color: c.net < 0 ? "var(--bad)" : undefined }}>{egp(c.net)}</b><span>الصافي · ليك <span className="num">{egp(c.owner)}</span> · للشركة <span className="num">{egp(c.company)}</span></span></div>
+    </div>
+    {c.overCap && <div className="msg bad">أجور الفريق ({egp(c.teamGross)} ج) أعلى من السقف المسموح ({egp(c.capLimit)} ج). قلّل الأجور أو عدد الأشخاص، أو ارفع السعر.</div>}
+
+    
+
+<div className="card plain"><h2>الحسبة</h2><div className="table-wrap"><table><tbody>
+      <tr><td>قيمة المشروع</td><td><span className="num">{egp(c.revenue)}</span> ج</td></tr>
+      <tr><td>− التكاليف المباشرة</td><td><span className="num">{egp(c.costs)}</span> ج</td></tr>
+      <tr><td>− صندوق الاشتراكات {p.fundPct}%</td><td><span className="num">{egp(c.fund)}</span> ج</td></tr>
+      <tr><td>− أجور الفريق بعد الخصومات {c.deductedTotal > 0 && <span className="sub">(اتخصم <span className="num">{egp(c.deductedTotal)}</span>)</span>}</td><td><span className="num">{egp(c.teamNet)}</span> ج</td></tr>
+      <tr><td><b>= الصافي</b> ← ليك {p.ownerPct}% · للشركة {100 - p.ownerPct}%</td><td><b className="num">{egp(c.net)}</b> ج</td></tr>
+    </tbody></table></div></div>
 
     <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
       <section className="card"><h2>دفعات العميل</h2>
@@ -161,7 +182,27 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       </section>
     </div>
 
-    <section className="card"><details><summary>بيانات المشروع ومرحلته</summary><div style={{ marginTop: 12 }}><EditProject p={p} clients={allClients} /></div></details></section>
+    </>}
+    {tab === "files" && <>
+    <ProjectAssets projectId={p.id} admin />
+    <Credentials projectId={p.id} me={me} />
+    <FinalFiles files={files} me={me} projectId={p.id} />
+
+    </>}
+    {tab === "brief" && <>
+    <section className="card" style={{ borderTopColor: "var(--pink)" }}><h2>البريف</h2>
+      {briefs.map((b) => <div key={b.id} className="actions" style={{ justifyContent: "space-between", borderBottom: "1px solid var(--line)", paddingBlock: 6 }}>
+        <span><a href={`/api/briefs/${b.id}`} target="_blank" rel="noopener"><b>بريف {b.lang === "ar" ? "عربي" : "English"}</b></a> <span className="sub">· {b.createdAt.toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span></span>
+        <form action={deleteBrief}><input type="hidden" name="id" value={b.id} /><button className="sm ghost">حذف</button></form></div>)}
+      <div style={{ marginTop: 14 }}><b style={{ color: "var(--navy)" }}>توليد بريف جديد</b><div style={{ marginTop: 10 }}>
+        <BriefForm projectId={p.id} currency={CUR[p.currency]} hint={p.description || "مثال: الفرعين بيستخدموا كاشيرين، 90% من العملاء بيجوا من الخرايط…"} suppliers={sups.map((s) => ({ id: s.id, label: `${s.provider} · ${s.item} (${s.price} ${CUR[s.currency]} ${BILLING[s.billing]})` }))} />
+      </div></div>
+    </section>
+
+    </>}
+    {tab === "details" && <>
+    <section className="card"><details open><summary>بيانات المشروع ومرحلته</summary><div style={{ marginTop: 12 }}><EditProject p={p} clients={allClients} /></div></details></section>
     <form action={deleteProject} className="actions"><input type="hidden" name="id" value={p.id} /><input id="del-project" name="confirm" placeholder='اكتب "حذف" لحذف المشروع' style={{ maxWidth: 220 }} /><button className="sm danger">حذف المشروع</button></form>
+    </>}
   </>);
 }

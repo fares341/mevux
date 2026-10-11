@@ -7,11 +7,13 @@ import { egp } from "@/lib/finance";
 import { removePayout, removeExpense } from "./actions";
 import { PayoutForm, FundForm, ExpenseForm } from "./forms";
 import { cashflow } from "@/lib/cashflow";
+import { PageHead, Tabs } from "@/components/ui";
 
 const mkey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const mlabel = (k: string) => new Date(k + "-01").toLocaleDateString("ar-EG", { month: "long", year: "numeric" });
 
-export default async function Finance() {
+export default async function Finance({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const tab = (await searchParams).tab || "overview";
   await requireAdmin();
   const [{ map, projectsCalc }, team, pays, spends, fixed, cf] = await Promise.all([
     earnings(),
@@ -52,7 +54,16 @@ export default async function Finance() {
   const pname = (id: string | null) => projectsCalc.find((x) => x.p.id === id)?.p.name;
 
   return (<>
-    <div className="head"><div><span className="tag">الإدارة</span><h1>المالية</h1><p className="sub">الأرقام بالجنيه. المشاريع بتتحسب في الأرباح لما تتقفل (العميل وافق ودفع).</p></div></div>
+    <PageHead title="المالية" help="كل الأرقام بالجنيه. فوق اللي دخل وخرج فعلاً، وفي التبويبات الاشتراكات والفريق وأرباح كل مشروع." actions={[{ href: "/finance?tab=expenses", label: "سجّل مصروف", icon: "plus", kind: "secondary" }, { href: "/finance?tab=team", label: "صرف لموظف", icon: "coins" }]} />
+    <Tabs base="/finance" current={tab} tabs={[
+      { key: "overview", label: "الشهر والاشتراكات", count: cf.subs.filter((x) => x.nextDue && +new Date(x.nextDue) - Date.now() < x.reminderDays * 864e5).length, alert: true },
+      { key: "cash", label: "شهر بشهر" },
+      { key: "expenses", label: "المصروفات" },
+      { key: "team", label: "الفريق والصرف" },
+      { key: "profits", label: "أرباح المشاريع" },
+      { key: "fund", label: "صندوق الاشتراكات" },
+    ]} />
+    {tab === "overview" && <>
     <h2>الشهر ده · {mlabel(cur.key)}</h2>
     <div className="grid">
       <div className="stat"><b className="num">{egp(cur.income)}</b><span>دخل فعلي (فلوس وصلت)</span></div>
@@ -73,6 +84,8 @@ export default async function Finance() {
       <p className="sub">دفعة الاشتراك بتتسجل من صفحة المشروع (دفعات العميل) أو قول للمساعد: "شركة الأمل دفعت اشتراك الشهر".</p>
     </section>
 
+    </>}
+    {tab === "cash" && <>
     <section className="card"><h2>شهر بشهر: دخلنا كام وصرفنا كام</h2>
       <div className="table-wrap"><table>
         <thead><tr><th>الشهر</th><th>الدخل</th><th>منه اشتراكات</th><th>تكاليف مشاريع</th><th>صرف للفريق</th><th>مصاريف ثابتة</th><th>مصروفات</th><th>من الصندوق</th><th>إجمالي المصروف</th><th>الصافي</th></tr></thead>
@@ -83,6 +96,8 @@ export default async function Finance() {
         </tbody></table></div>
     </section>
 
+    </>}
+    {tab === "expenses" && <>
     <section className="card"><h2>المصروفات العامة</h2>
       <ExpenseForm />
       {cf.exps.length > 0 && <div className="table-wrap" style={{ marginTop: 14 }}><table>
@@ -91,15 +106,8 @@ export default async function Finance() {
           <td><form action={removeExpense}><input type="hidden" name="id" value={e.id} /><button className="sm ghost">حذف</button></form></td></tr>)}</tbody></table></div>}
     </section>
 
-    <h2 style={{ marginTop: 26 }}>أرباح المشاريع المقفولة</h2>
-    <div className="grid">
-      <div className="stat"><b className="num">{egp(sum((x) => x.c.revenue))}</b><span>دخل المشاريع المقفولة</span></div>
-      <div className="stat"><b className="num">{egp(sum((x) => x.c.owner))}</b><span>دخلك</span></div>
-      <div className="stat"><b className="num">{egp(sum((x) => x.c.company) - fixedTotal)}</b><span>خزنة الشركة بعد المصاريف الثابتة</span></div>
-      <div className="stat"><b className="num">{egp(fundIn - fundOut)}</b><span>رصيد صندوق الاشتراكات</span></div>
-      <div className="stat"><b className="num">{egp(people.reduce((a, p) => a + Math.max(0, p.due), 0))}</b><span>مستحق للفريق ولسه ما اتصرفش</span></div>
-    </div>
-
+    </>}
+    {tab === "team" && <>
     <section className="card"><h2>الفريق</h2><div className="table-wrap"><table>
       <thead><tr><th>الشخص</th><th>متوقع (مشاريع شغالة)</th><th>مستحق (مشاريع مقفولة)</th><th>اتصرف</th><th>الباقي له</th><th>إجمالي الخصومات</th></tr></thead>
       <tbody>{people.map((u) => <tr key={u.id}><td><b>{u.name}</b></td><td className="num">{egp(u.expected)}</td><td className="num">{egp(u.entitled)}</td><td className="num">{egp(u.paid)}</td>
@@ -112,6 +120,16 @@ export default async function Finance() {
           <td><form action={removePayout}><input type="hidden" name="id" value={p.id} /><button className="sm ghost">حذف</button></form></td></tr>)}</tbody></table></div></details>}
     </section>
 
+    </>}
+    {tab === "profits" && <>
+    <div className="grid">
+      <div className="stat"><b className="num">{egp(sum((x) => x.c.revenue))}</b><span>دخل المشاريع المقفولة</span></div>
+      <div className="stat"><b className="num">{egp(sum((x) => x.c.owner))}</b><span>دخلك</span></div>
+      <div className="stat"><b className="num">{egp(sum((x) => x.c.company) - fixedTotal)}</b><span>خزنة الشركة بعد المصاريف الثابتة</span></div>
+      <div className="stat"><b className="num">{egp(fundIn - fundOut)}</b><span>رصيد صندوق الاشتراكات</span></div>
+      <div className="stat"><b className="num">{egp(people.reduce((a, p) => a + Math.max(0, p.due), 0))}</b><span>مستحق للفريق ولسه ما اتصرفش</span></div>
+    </div>
+
     <section className="card"><h2>أرباح المشاريع المقفولة شهر بشهر</h2><p className="sub" style={{ marginTop: -6 }}>المشروع بيتحسب في الشهر اللي اتقفل فيه، بعد ما نخصم أجور الفريق والتكاليف والصندوق.</p>
       {monthRows.length ? <div className="table-wrap"><table>
         <thead><tr><th>الشهر</th><th>مشاريع اتقفلت</th><th>الدخل</th><th>دخلك</th><th>نصيب الشركة</th><th>مصاريف ثابتة</th><th>الشركة بعد المصاريف</th></tr></thead>
@@ -120,12 +138,15 @@ export default async function Finance() {
         : <p className="sub">لسه مفيش مشاريع مقفولة.</p>}
     </section>
 
+    <section className="card plain"><h2>المشاريع المقفولة</h2>{closed.length ? closed.map((x) => <div key={x.p.id}><Link href={`/projects/${x.p.id}`}>{x.p.name}</Link> · <span className="num">{egp(x.c.net)}</span> ج صافي</div>) : <p className="sub">لا يوجد.</p>}</section>
+    </>}
+    {tab === "fund" && <>
     <section className="card"><h2>صندوق الاشتراكات · <span className="num">{egp(fundIn - fundOut)}</span> ج</h2>
       <p className="sub" style={{ marginTop: -6 }}>داخل <span className="num">{egp(fundIn)}</span> ج من المشاريع المقفولة، وخارج <span className="num">{egp(fundOut)}</span> ج.</p>
       {spends.map((s) => <div key={s.id} className="sub">{s.spentAt.toLocaleDateString("ar-EG")} · {s.name} · <span className="num">{egp(s.amountEgp)}</span> ج</div>)}
       <div style={{ marginTop: 12 }}><FundForm /></div>
     </section>
 
-    <section className="card plain"><h2>المشاريع المقفولة</h2>{closed.length ? closed.map((x) => <div key={x.p.id}><Link href={`/projects/${x.p.id}`}>{x.p.name}</Link> · <span className="num">{egp(x.c.net)}</span> ج صافي</div>) : <p className="sub">لا يوجد.</p>}</section>
+    </>}
   </>);
 }
