@@ -159,3 +159,30 @@ export const fundSpends = pgTable("fund_spends", {
   amountEgp: numeric("amount_egp", { precision: 12, scale: 2, mode: "number" }).notNull(),
   spentAt: timestamp("spent_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ===== Files & credentials =====
+export const fileKind = pgEnum("file_kind", ["DELIVERABLE", "FINAL"]);
+export const projectFiles = pgTable("project_files", {
+  id: id(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  roleId: text("role_id").references(() => projectRoles.id, { onDelete: "set null" }),
+  kind: fileKind("kind").notNull(),
+  uploadedBy: text("uploaded_by").notNull().references(() => users.id),
+  originalName: text("original_name").notNull(),
+  storedName: text("stored_name").notNull().unique(),
+  size: integer("size").notNull(),
+  mime: text("mime").notNull(),
+  note: text("note"),
+  createdAt: created(),
+});
+
+export const credentials = pgTable("credentials", {
+  id: id(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  url: text("url"),
+  username: text("username"),
+  secretEnc: text("secret_enc"),
+  notes: text("notes"),
+  createdAt: created(),
+});

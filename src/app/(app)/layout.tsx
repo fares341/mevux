@@ -6,7 +6,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const u = await requireUser();
   const admin = u.role === "ADMIN";
   const groups = [
-    { title: "العمل", items: [{ href: "/", label: "الرئيسية" }, { href: "/projects", label: admin ? "المشاريع" : "المشاريع الشغالة" }] },
+    { title: "العمل", items: [{ href: "/", label: "الرئيسية" }, { href: "/projects", label: "المشاريع" }] },
     ...(admin ? [{ title: "الإدارة", items: [
       { href: "/finance", label: "المالية" },
       { href: "/team", label: "الموظفون" },

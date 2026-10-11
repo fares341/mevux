@@ -16,6 +16,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://mevix:${DB_PASSWORD}@db:5432/mevix
+    volumes: [uploads:/data/uploads]
     depends_on: { db: { condition: service_healthy } }
 
   tools:
@@ -35,4 +36,4 @@ services:
     volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro, caddydata:/data]
     depends_on: [app]
 
-volumes: { dbdata: {}, caddydata: {} }
+volumes: { dbdata: {}, caddydata: {}, uploads: {} }

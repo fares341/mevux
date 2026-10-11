@@ -93,3 +93,8 @@ details summary { cursor: pointer; font-weight: 700; color: var(--blue); }
   .main { padding: 20px 16px 40px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+a.btn { text-decoration: none; }
+a.btn:hover { background: var(--blue); color: #fff; }
+a.btn.ghost-link { background: var(--panel); color: var(--navy); border: 1px solid var(--line); }
+a.btn.ghost-link:hover { background: var(--pale); color: var(--navy); }

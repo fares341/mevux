@@ -10,6 +10,6 @@ export default {
   output: "standalone",
   poweredByHeader: false,
   images: { unoptimized: true },
-  experimental: { serverActions: { bodySizeLimit: "2mb" } },
+  experimental: { serverActions: { bodySizeLimit: "26mb" } },
   async headers() { return [{ source: "/:path*", headers: security }]; },
 };

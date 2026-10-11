@@ -7,6 +7,8 @@ import { egp } from "@/lib/finance";
 import { BILLING } from "@/lib/labels";
 import { removeRow, setDelivered, updateProgress, decideDeduction, deleteProject } from "../actions";
 import { EditProject, PaymentForm, CostForm, RoleForm, DeductionForm } from "../forms";
+import { RoleUpload } from "../files-ui";
+import { loadFiles, FileList, Credentials, FinalFiles } from "../extras";
 
 const fmt = (d: Date | null) => (d ? d.toLocaleDateString("ar-EG", { day: "numeric", month: "short", year: "numeric" }) : "—");
 const CUR = { EGP: "ج", SAR: "ريال", USD: "$" } as Record<string, string>;
@@ -26,6 +28,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     const p = (await loadTeamView(false)).find((x) => x.id === id);
     const mine = p?.roles.some((r) => r.members.some((m) => m.userId === me.id));
     if (!p || (!(ACTIVE as readonly string[]).includes(p.status) && !mine)) notFound();
+    const files = mine ? await loadFiles(p.id) : [];
     return (<>
       <div className="head"><div><span className="tag">{STATUS[p.status]}</span><h1>{p.name}</h1><p className="sub">{p.client} · التسليم {fmt(p.dueDate)}</p></div></div>
       {p.description && <div className="note" style={{ whiteSpace: "pre-wrap" }}>{p.description}</div>}
@@ -36,7 +39,11 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
           {r.scope && <p style={{ whiteSpace: "pre-wrap" }}><b>المطلوب: </b>{r.scope}</p>}
           {r.deliverables && <p style={{ whiteSpace: "pre-wrap" }}><b>المخرجات: </b>{r.deliverables}</p>}
           <div className="actions"><b>التقدم:</b> <Progress roleId={r.id} value={r.progress} canEdit={own} /></div>
+          {mine && <div style={{ marginTop: 12 }}><b style={{ color: "var(--navy)" }}>ملفات الدور</b><FileList files={files.filter((f) => f.roleId === r.id)} me={me} /></div>}
+          {own && <details style={{ marginTop: 10 }} open={!r.deliveredAt}><summary>ارفع ملف شغلك</summary><div style={{ marginTop: 10 }}><RoleUpload roleId={r.id} delivered={!!r.deliveredAt} /></div></details>}
         </section>); })}
+      {mine && <Credentials projectId={p.id} me={me} />}
+      {mine && <FinalFiles files={files} me={me} projectId={p.id} />}
     </>);
   }
 
@@ -48,6 +55,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     db.select().from(bans).where(eq(bans.consumedByProject, id)),
   ]);
   if (!p) notFound();
+  const files = await loadFiles(p.id);
   const c = calc(p, r);
   const name = (uid: string) => team.find((u) => u.id === uid)?.name || "—";
   const userOpts = team.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name, banned: openBans.some((b) => b.userId === u.id) }));
@@ -91,6 +99,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
               <input aria-label="تاريخ التسليم" id={"dl-" + ro.id} name="deliveredAt" type="date" defaultValue={ro.deliveredAt ? ro.deliveredAt.toISOString().slice(0, 10) : ""} style={{ maxWidth: 160 }} /><button className="sm ghost">{ro.deliveredAt ? "تعديل تاريخ التسليم" : "تسجيل التسليم"}</button></form>
             <Progress roleId={ro.id} value={ro.progress} canEdit />
           </div>
+          <div style={{ marginTop: 10 }}><b style={{ color: "var(--navy)" }}>ملفات الدور</b><FileList files={files.filter((f) => f.roleId === ro.id)} me={me} /></div>
           <details style={{ marginTop: 10 }}><summary>تعديل ملف الدور</summary><div style={{ marginTop: 12 }}>
             <RoleForm projectId={p.id} users={userOpts} label="حفظ الدور" role={{ id: ro.id, title: ro.title, fee: ro.fee, scope: ro.scope, deliverables: ro.deliverables, dueDate: ro.dueDate, members: ro.members }} />
             <form action={removeRow} style={{ marginTop: 10 }}><input type="hidden" name="kind" value="role" /><input type="hidden" name="id" value={ro.id} /><input type="hidden" name="projectId" value={p.id} /><button className="sm danger">حذف الدور</button></form>
@@ -99,6 +108,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       <details open={!p.roles.length} style={{ marginTop: 14 }}><summary>إضافة دور</summary><div style={{ marginTop: 12 }}><RoleForm projectId={p.id} users={userOpts} label="إضافة الدور" /></div></details>
       {openBans.length > 0 && <p className="sub">محرومين من المشروع ده: {openBans.map((b) => name(b.userId)).join("، ")}</p>}
     </section>
+
+    <Credentials projectId={p.id} me={me} />
+    <FinalFiles files={files} me={me} projectId={p.id} />
 
     <section className="card"><h2>الخصومات</h2>
       {allDeds.length > 0 && <div className="table-wrap" style={{ marginBottom: 14 }}><table>
