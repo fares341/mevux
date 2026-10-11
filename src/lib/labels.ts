@@ -20,3 +20,7 @@ export const ASSET_KINDS = { WEBSITE: "موقع", APP: "تطبيق", SAAS: "SaaS
 export const ASSET_KINDS_EN: Record<string, string> = { WEBSITE: "Website", APP: "App", SAAS: "SaaS", SERVER: "Server / hosting", DOMAIN: "Domain", OTHER: "Other" };
 export const PAID_BY = { CLIENT: "العميل بيدفعها", US: "إحنا بندفعها", INCLUDED: "ضمن الاشتراك" } as const;
 export const PAID_BY_EN: Record<string, string> = { CLIENT: "paid by the client", US: "paid by MEVIX", INCLUDED: "included in the subscription" };
+
+export const IDEA_AREA = { SYSTEM: "السيستم", COMPANY: "الشركة", CLIENTS: "العملاء والخدمات", MARKETING: "التسويق", OTHER: "أخرى" } as const;
+export const IDEA_STATUS = { NEW: "جديدة", PLANNED: "هنعملها", DOING: "شغالين عليها", DONE: "اتنفذت", DROPPED: "اتلغت" } as const;
+export const IDEA_PRIORITY = { HIGH: "مهمة", MID: "عادية", LOW: "بعدين" } as const;

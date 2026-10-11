@@ -29,6 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       { href: "/complaints", label: "الشكاوى", icon: "flag" },
     ] },
     ...(admin ? [{ title: "الإدارة", items: [
+      { href: "/ideas", label: "أفكار للشركة", icon: "bulb" },
       { href: "/finance", label: "المالية", icon: "wallet", badge: dueSubs || undefined, warn: true },
       { href: "/team", label: "الموظفون", icon: "team" },
       { href: "/suppliers", label: "الموردون", icon: "box" },

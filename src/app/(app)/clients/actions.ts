@@ -17,10 +17,10 @@ const date = z.preprocess((v) => (v ? new Date(String(v)) : null), z.date().null
 
 const base = z.object({
   name: z.string().trim().min(2, "اكتب اسم العميل").max(120), company: z.string().max(120).optional(), phone: z.string().max(40).optional(),
-  email: z.string().max(120).optional(), country: z.string().max(60).optional(), source: z.string().max(120).optional(), need: z.string().max(4000).optional(),
+  email: z.string().max(120).optional(), website: z.string().max(300).optional(), socials: z.string().max(2000).optional(), notes: z.string().max(4000).optional(), country: z.string().max(60).optional(), source: z.string().max(120).optional(), need: z.string().max(4000).optional(),
   stage: STAGE, nextStep: z.string().max(300).optional(), nextDate: date,
 });
-const read = (fd: FormData) => base.safeParse({ name: opt(fd, "name"), company: opt(fd, "company"), phone: opt(fd, "phone"), email: opt(fd, "email"), country: opt(fd, "country"), source: opt(fd, "source"), need: opt(fd, "need"), stage: opt(fd, "stage") || "NEW", nextStep: opt(fd, "nextStep"), nextDate: opt(fd, "nextDate") });
+const read = (fd: FormData) => base.safeParse({ name: opt(fd, "name"), company: opt(fd, "company"), phone: opt(fd, "phone"), email: opt(fd, "email"), website: opt(fd, "website"), socials: opt(fd, "socials"), notes: opt(fd, "notes"), country: opt(fd, "country"), source: opt(fd, "source"), need: opt(fd, "need"), stage: opt(fd, "stage") || "NEW", nextStep: opt(fd, "nextStep"), nextDate: opt(fd, "nextDate") });
 
 export async function createClient(_: R, fd: FormData): Promise<R> {
   const admin = await requireAdmin();

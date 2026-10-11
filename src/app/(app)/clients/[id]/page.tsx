@@ -56,6 +56,11 @@ export default async function ClientPage({ params, searchParams }: { params: Pro
       <div className="stat"><b style={{ fontSize: 18 }}>{c.nextStep || "—"}</b><span>الخطوة الجاية · {fmt(c.nextDate)}</span></div>
     </div>
     {c.need && <div className="note" style={{ whiteSpace: "pre-wrap" }}><b>محتاج: </b>{c.need}</div>}
+    {(c.website || c.socials || c.notes) && <div className="note" style={{ whiteSpace: "pre-wrap" }}>
+      {c.website && <div><b>الموقع: </b><a href={/^https?:/.test(c.website) ? c.website : "https://" + c.website} target="_blank" rel="noopener noreferrer" dir="ltr">{c.website}</a></div>}
+      {c.socials && <div><b>السوشيال: </b>{c.socials.split(/\n+/).filter(Boolean).map((l, i) => <bdi key={i} dir="ltr" style={{ display: "inline-block", marginInlineEnd: 12 }}>{l.trim()}</bdi>)}</div>}
+      {c.notes && <div><b>ملاحظات: </b>{c.notes}</div>}
+    </div>}
 
     <section className="card"><h2>تسجيل تحديث</h2><StageLog c={c} /></section>
 

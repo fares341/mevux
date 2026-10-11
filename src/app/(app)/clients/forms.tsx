@@ -7,7 +7,7 @@ const Msg = ({ s }: { s: R }) => s?.error ? <div className="msg bad" role="alert
 const d = (x?: Date | null) => (x ? new Date(x).toISOString().slice(0, 10) : "");
 const StageSelect = ({ id, v }: { id: string; v?: string }) => <select id={id} name="stage" defaultValue={v || "NEW"}>{Object.entries(STAGES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>;
 
-type C = { customStage?: string | null; id?: string; name?: string; company?: string | null; phone?: string | null; email?: string | null; country?: string | null; source?: string | null; need?: string | null; stage?: string; nextStep?: string | null; nextDate?: Date | null };
+type C = { customStage?: string | null; id?: string; name?: string; company?: string | null; phone?: string | null; email?: string | null; website?: string | null; socials?: string | null; notes?: string | null; country?: string | null; source?: string | null; need?: string | null; stage?: string; nextStep?: string | null; nextDate?: Date | null };
 function Fields({ c, k }: { c: C; k: string }) {
   return (<>
     <div className="row">
@@ -25,6 +25,11 @@ function Fields({ c, k }: { c: C; k: string }) {
       <label>الخطوة الجاية<input id={k + "next"} name="nextStep" defaultValue={c.nextStep || ""} placeholder="ميتنج، إرسال البريف، متابعة…" /></label>
       <label>موعدها<input id={k + "nextDate"} name="nextDate" type="date" defaultValue={d(c.nextDate)} /></label>
     </div>
+    <div className="row">
+      <label>الموقع<input id={k + "website"} name="website" dir="ltr" defaultValue={c.website || ""} placeholder="example.com أو سيبها فاضية لو مفيش" /></label>
+      <label>السوشيال (لينك في كل سطر)<textarea id={k + "socials"} name="socials" dir="ltr" rows={2} defaultValue={c.socials || ""} placeholder={"instagram.com/…\nfacebook.com/…"} /></label>
+    </div>
+    <label style={{ marginBottom: 14 }}>ملاحظات عن العميل<textarea id={k + "notes"} name="notes" rows={2} defaultValue={c.notes || ""} /></label>
     <label style={{ marginBottom: 14 }}>العميل محتاج إيه<textarea id={k + "need"} name="need" defaultValue={c.need || ""} /></label>
   </>);
 }

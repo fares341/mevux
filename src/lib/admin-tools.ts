@@ -1,12 +1,13 @@
 import "server-only";
 import { asc, desc, eq } from "drizzle-orm";
-import { db, users, clients, clientEvents, projects, installments, suppliers, bans, projectPayments, projectRoles, roleMembers, projectFiles, clientFiles, expenses, payouts, projectAssets } from "./db";
+import { db, ideas, deductions, users, clients, clientEvents, projects, installments, suppliers, bans, projectPayments, projectRoles, roleMembers, projectFiles, clientFiles, expenses, payouts, projectAssets } from "./db";
 import type { Pending } from "./assistant-tools";
 import type { SessionUser } from "./auth";
 import type { ToolDef } from "./ai";
 import { getSettings } from "./settings";
 import { STAGES, stageLabel } from "./labels";
-import { STATUS } from "./projects";
+import { STATUS, DED, earnings } from "./projects";
+import { IDEA_AREA, IDEA_STATUS, IDEA_PRIORITY } from "./labels";
 import { audit } from "./audit";
 import { isNull } from "drizzle-orm";
 import { addPayment, addCost, saveRole } from "@/app/(app)/projects/actions";
@@ -34,7 +35,12 @@ export const ADMIN_TOOLS: ToolDef[] = [
   fn("system_guide", "Explain how the system is organised and what to do first. Use when the owner asks how to use the system or seems lost.", {}),
   fn("list_clients", "All clients with stage, next step and their projects.", {}),
   fn("list_projects_admin", "All projects with status, price, contract type and client.", {}),
-  fn("create_client", "Add a new client.", { name: S("client name"), company: S("company / business"), phone: S("phone"), country: S("country"), need: S("what they need"), stage: E(STAGE_KEYS, "deal stage, default NEW"), next_step: S("next step"), next_date: S("YYYY-MM-DD") }, ["name"]),
+  fn("create_client", "Add a new client with all their details.", { name: S("client name"), company: S("company / business"), phone: S("phone"), email: S("email"), website: S("website / domain, leave empty if none"), socials: S("social links or handles, one per line"), source: S("how they reached us"), notes: S("any other notes"), country: S("country"), need: S("what they need"), stage: E(STAGE_KEYS, "deal stage, default NEW"), next_step: S("next step"), next_date: S("YYYY-MM-DD") }, ["name"]),
+  fn("update_client", "Edit a client's details (phone, email, website, socials, notes...). Only send fields to change.", { client: S("client name"), new_name: S("rename"), company: S("company"), phone: S("phone"), email: S("email"), website: S("website / domain, leave empty if none"), socials: S("social links or handles, one per line"), source: S("how they reached us"), notes: S("any other notes"), country: S("country"), need: S("what they need") }, ["client"]),
+  fn("team_earnings", "Money of team members across projects: for each project their fee, deductions (lateness, rework...) with reasons, net, whether they are entitled yet (project closed and client paid), how much they received and what is still owed. Admin only.", { people: { type: "array", items: { type: "string" }, description: "names; omit for everyone" }, project: S("limit to one project, optional") }),
+  fn("add_idea", "Save an idea for the company or the system on the ideas board.", { title: S("the idea in one line"), details: S("details"), area: E(Object.keys(IDEA_AREA), "SYSTEM, COMPANY, CLIENTS, MARKETING, OTHER"), priority: E(Object.keys(IDEA_PRIORITY), "HIGH, MID, LOW") }, ["title"]),
+  fn("list_ideas", "List saved ideas.", { status: E(["OPEN", ...Object.keys(IDEA_STATUS)], "OPEN = new/planned/doing (default)") }),
+  fn("set_idea_status", "Change an idea's status.", { idea: S("idea title"), status: E(Object.keys(IDEA_STATUS), "new status") }, ["idea", "status"]),
   fn("update_client_stage", "Move a client to a stage and/or write a custom status, log what happened, set the next step.", { client: S("client name"), stage: E(STAGE_KEYS, "fixed stage"), custom_status: S("owner's own status wording, optional"), note: S("what happened"), next_step: S("next step"), next_date: S("YYYY-MM-DD") }, ["client"]),
   fn("create_project", "Create a project, optionally for an existing client.", { name: S("project name"), client: S("client name (existing client or free text)"), price: N("implementation / setup price"), currency: CUR, billing: E(["ONE_TIME", "SUBSCRIPTION"], "contract type"), monthly_fee: N("monthly subscription if SUBSCRIPTION"), free_messages: N("free WhatsApp messages per month, default 1000"), status: E(["MEETING", "BRIEF", "APPROVED", "IN_PROGRESS", "DELIVERED", "CLOSED"], "stage"), start_date: S("YYYY-MM-DD"), due_date: S("YYYY-MM-DD"), size: E(["SMALL", "MEDIUM", "LARGE"], "size"), description: S("description") }, ["name", "client", "price", "currency"]),
   fn("set_project_status", "Change a project's stage (e.g. CLOSED when the client accepted and paid).", { project: S("project name"), status: E(Object.keys(STATUS), "new status") }, ["project", "status"]),
@@ -48,7 +54,7 @@ export const ADMIN_TOOLS: ToolDef[] = [
   fn("create_employee", "Create an employee account. Returns a one-time password to give them.", { name: S("full name"), username: S("login username, lowercase english"), job_title: S("specialty"), role: E(["MEMBER", "TEAM_LEAD"], "permission") }, ["name", "username"]),
   fn("record_payout", "Record money paid to a team member (EGP).", { person: S("name"), amount: N("EGP"), project: S("project, optional"), note: S("note") }, ["person", "amount"]),
   fn("import_old_project", "Add a past or ongoing project with its client in one go (for old work). Creates/links the client, the project with real dates and status, the amount the client paid, the people who worked on it, and attaches any files sent in this message.", {
-    client: S("client name"), client_company: S("company / business"), client_phone: S("phone"), client_country: S("country"),
+    client: S("client name"), client_company: S("company / business"), client_phone: S("phone"), client_country: S("country"), client_email: S("email"), client_website: S("client's website, if any"), client_socials: S("social links, one per line"), client_notes: S("notes about the client"),
     project: S("project name"), description: S("what was built"), price: N("project price"), currency: CUR,
     billing: E(["ONE_TIME", "SUBSCRIPTION"], "contract type"), monthly_fee: N("monthly subscription if any"),
     status: E(["IN_PROGRESS", "DELIVERED", "CLOSED", "CANCELLED"], "CLOSED = finished and paid"),
@@ -56,7 +62,7 @@ export const ADMIN_TOOLS: ToolDef[] = [
     paid_amount: N("total the client paid, in the project currency"),
     team: { type: "array", description: "who worked on it", items: { type: "object", properties: { person: S("name"), role: S("role title"), fee: N("fee paid to them in EGP") }, required: ["person", "role"], additionalProperties: false } },
     files_kind: E(["FINAL", "CLIENT_BRIEF", "CLIENT_CONTRACT", "CLIENT_OTHER"], "where to store attached files: project final files, or the client's file"),
-    team_already_paid: { type: "boolean", description: "true (default) if the team was already paid for this old project; records their payouts so they don't show as owed" },
+    team_already_paid: { type: "boolean", description: "true if the team was already paid for this old project (records payouts); false if they are still owed. Ask the owner if unknown." },
   }, ["client", "project", "price", "currency", "status"]),
   fn("attach_files", "Store the files sent in this message on a project (final files) or in a client's file.", { target: E(["project", "client"], "where"), name: S("project or client name"), kind: E(["FINAL", "BRIEF", "CONTRACT", "OTHER"], "file type") }, ["target", "name"]),
   fn("record_expense", "Record a company expense (EGP) such as ads, tools, salaries.", { name: S("what"), amount_egp: N("EGP"), category: E(["ADS", "TOOLS", "SALARIES", "OTHER"], "category"), date: S("YYYY-MM-DD, default today"), note: S("note") }, ["name", "amount_egp"]),
@@ -132,10 +138,78 @@ export async function runAdminTool(name: string, a: Record<string, unknown>, u: 
     }
     case "create_client": {
       const stage = (s("stage") && STAGE_KEYS.includes(s("stage")!) ? s("stage") : "NEW") as keyof typeof STAGES;
-      const [c] = await db.insert(clients).values({ name: s("name")!, company: s("company"), phone: s("phone"), country: s("country"), need: s("need"), stage, nextStep: s("next_step"), nextDate: s("next_date") ? new Date(s("next_date")!) : null }).returning();
+      const [c] = await db.insert(clients).values({ name: s("name")!, company: s("company"), phone: s("phone"), email: s("email"), website: s("website"), socials: s("socials"), source: s("source"), notes: s("notes"), country: s("country"), need: s("need"), stage, nextStep: s("next_step"), nextDate: s("next_date") ? new Date(s("next_date")!) : null }).returning();
       await db.insert(clientEvents).values({ clientId: c.id, stage, note: "اتضاف من المساعد", by: u.id });
       revalidatePath("/clients");
-      return { created: c.name, stage: STAGES[stage], link: `/clients/${c.id}` };
+      return { created: c.name, stage: STAGES[stage], saved: { phone: c.phone, email: c.email, website: c.website, socials: c.socials, company: c.company }, link: `/clients/${c.id}` };
+    }
+    case "update_client": {
+      const c = pick(await allClients(), s("client")!, "عميل");
+      const set: Partial<typeof clients.$inferInsert> = {};
+      for (const k of ["company", "phone", "email", "website", "socials", "source", "notes", "country", "need"] as const) if (s(k) !== undefined) set[k] = s(k) || null;
+      if (s("new_name")) set.name = s("new_name");
+      if (!Object.keys(set).length) throw new Error("مفيش حاجة اتطلب تتغير.");
+      await db.update(clients).set({ ...set, updatedAt: new Date() }).where(eq(clients.id, c.id));
+      if (set.name) await db.update(projects).set({ client: set.name }).where(eq(projects.clientId, c.id));
+      revalidatePath(`/clients/${c.id}`); revalidatePath("/clients");
+      return { client: set.name ?? c.name, changed: Object.keys(set), link: `/clients/${c.id}` };
+    }
+    case "team_earnings": {
+      const people = await team();
+      const want = Array.isArray(a.people) && (a.people as string[]).length ? (a.people as string[]).map((x) => pick(people, x, "موظف").id) : null;
+      const onlyProject = s("project") ? pick(await allProjects(), s("project")!, "مشروع").id : null;
+      const [{ projectsCalc }, pays, deds] = await Promise.all([earnings(), db.select().from(payouts), db.select().from(deductions)]);
+      const name = (id: string) => people.find((p) => p.id === id)?.name ?? "؟";
+      const r0 = (x: number) => Math.round(x);
+      const byPerson = new Map<string, { person: string; projects: unknown[]; totals: { net: number; entitled: number; received: number; owedNow: number; notYetDue: number; deducted: number } }>();
+      for (const { p, c } of projectsCalc) {
+        if (p.status === "CANCELLED" || (onlyProject && p.id !== onlyProject)) continue;
+        for (const l of c.lines) {
+          if (want && !want.includes(l.userId)) continue;
+          const e = byPerson.get(l.userId) ?? { person: name(l.userId), projects: [], totals: { net: 0, entitled: 0, received: 0, owedNow: 0, notYetDue: 0, deducted: 0 } };
+          const received = pays.filter((x) => x.userId === l.userId && x.projectId === p.id).reduce((a2, x) => a2 + x.amountEgp, 0);
+          const closed = p.status === "CLOSED";
+          const owed = closed ? Math.max(0, l.net - received) : 0;
+          const reasons = [
+            ...(l.latePct ? [`تأخير ${l.days} يوم = ${l.latePct}%`] : []),
+            ...deds.filter((d) => d.roleId === l.roleId && d.userId === l.userId && d.status === "APPROVED").map((d) => `${DED[d.type as keyof typeof DED] ?? d.type} ${d.pct}%: ${d.reason}`),
+          ];
+          const pending = deds.filter((d) => d.roleId === l.roleId && d.userId === l.userId && d.status === "PENDING").map((d) => `${DED[d.type as keyof typeof DED] ?? d.type} ${d.pct}% (لسه ما اتقررش)`);
+          e.projects.push({
+            project: p.name, client: p.client, projectStatus: STATUS[p.status], role: l.title,
+            fee: r0(l.base), deductedPct: l.totalPct, deducted: r0(l.deducted), deductionReasons: reasons.length ? reasons : "مفيش خصم", pendingDeductions: pending.length ? pending : undefined,
+            net: r0(l.net), received: r0(received),
+            status: !closed ? "لسه مش مستحق: بيتصرف بعد ما العميل يوافق ويدفع ويتقفل المشروع" : received >= l.net - 0.5 ? "استلم كامل" : received > 0 ? `استلم جزء، باقي ${r0(owed)} ج` : `مستحق ولسه ما استلمش ${r0(owed)} ج`,
+          });
+          e.totals.net += l.net; e.totals.deducted += l.deducted; e.totals.received += received;
+          if (closed) { e.totals.entitled += l.net; e.totals.owedNow += owed; } else e.totals.notYetDue += l.net;
+          byPerson.set(l.userId, e);
+        }
+      }
+      for (const id of want ?? []) if (!byPerson.has(id)) byPerson.set(id, { person: name(id), projects: [], totals: { net: 0, entitled: 0, received: 0, owedNow: 0, notYetDue: 0, deducted: 0 } });
+      return [...byPerson.entries()].map(([id, e]) => {
+        const general = onlyProject ? 0 : pays.filter((x) => x.userId === id && !x.projectId).reduce((a2, x) => a2 + x.amountEgp, 0);
+        return { ...e, currency: "EGP", totals: Object.fromEntries(Object.entries(e.totals).map(([k, v]) => [k, r0(v)])), paidWithoutProject: general ? r0(general) : undefined };
+      });
+    }
+    case "add_idea": {
+      const area = s("area") && s("area")! in IDEA_AREA ? s("area")! : "COMPANY";
+      const priority = s("priority") && s("priority")! in IDEA_PRIORITY ? s("priority")! : "MID";
+      const [i] = await db.insert(ideas).values({ title: s("title")!.slice(0, 200), details: s("details")?.slice(0, 5000), area, priority, createdBy: u.id }).returning();
+      revalidatePath("/ideas");
+      return { saved: i.title, area: IDEA_AREA[area as keyof typeof IDEA_AREA], link: "/ideas" };
+    }
+    case "list_ideas": {
+      const st = s("status") || "OPEN";
+      const all = await db.select().from(ideas).orderBy(desc(ideas.createdAt));
+      return all.filter((i) => st === "OPEN" ? ["NEW", "PLANNED", "DOING"].includes(i.status) : i.status === st).map((i) => ({ idea: i.title, details: i.details, area: IDEA_AREA[i.area as keyof typeof IDEA_AREA], status: IDEA_STATUS[i.status as keyof typeof IDEA_STATUS], priority: IDEA_PRIORITY[i.priority as keyof typeof IDEA_PRIORITY], date: i.createdAt.toISOString().slice(0, 10) }));
+    }
+    case "set_idea_status": {
+      const i = pick((await db.select().from(ideas)).map((x) => ({ ...x, name: x.title })), s("idea")!, "فكرة");
+      if (!(s("status")! in IDEA_STATUS)) throw new Error("حالة غير معروفة.");
+      await db.update(ideas).set({ status: s("status")!, updatedAt: new Date() }).where(eq(ideas.id, i.id));
+      revalidatePath("/ideas");
+      return { idea: i.title, status: IDEA_STATUS[s("status") as keyof typeof IDEA_STATUS] };
     }
     case "update_client_stage": {
       const c = pick(await allClients(), s("client")!, "عميل");
@@ -221,8 +295,15 @@ export async function runAdminTool(name: string, a: Record<string, unknown>, u: 
       let cl = (await allClients()).find((x) => norm(x.name) === norm(cname));
       const status = (s("status") || "CLOSED") as "IN_PROGRESS" | "DELIVERED" | "CLOSED" | "CANCELLED";
       if (!cl) {
-        [cl] = await db.insert(clients).values({ name: cname, company: s("client_company"), phone: s("client_phone"), country: s("client_country"), need: s("description"), stage: status === "IN_PROGRESS" ? "ACTIVE" : status === "CANCELLED" ? "LOST" : "DONE" }).returning();
+        [cl] = await db.insert(clients).values({ name: cname, company: s("client_company"), phone: s("client_phone"), country: s("client_country"), email: s("client_email"), website: s("client_website"), socials: s("client_socials"), notes: s("client_notes"), need: s("description"), stage: status === "IN_PROGRESS" ? "ACTIVE" : status === "CANCELLED" ? "LOST" : "DONE" }).returning();
         await db.insert(clientEvents).values({ clientId: cl.id, stage: cl.stage, note: "عميل قديم اتضاف من المساعد", by: u.id });
+      }
+      else {
+        // Existing client: fill in only the details that are still empty, never overwrite.
+        const fill: Partial<typeof clients.$inferInsert> = {};
+        const add = (k: "company" | "phone" | "country" | "email" | "website" | "socials" | "notes", v?: string) => { if (v && !cl![k]) fill[k] = v; };
+        add("company", s("client_company")); add("phone", s("client_phone")); add("country", s("client_country")); add("email", s("client_email")); add("website", s("client_website")); add("socials", s("client_socials")); add("notes", s("client_notes"));
+        if (Object.keys(fill).length) await db.update(clients).set({ ...fill, updatedAt: new Date() }).where(eq(clients.id, cl.id));
       }
       const cur = s("currency") || "EGP";
       const rate = cur === "SAR" ? Number(st.rateSAR) : cur === "USD" ? Number(st.rateUSD) : 1;

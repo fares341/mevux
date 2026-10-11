@@ -280,3 +280,21 @@ details[open] > summary::before { content: "–"; }
   .lg-mobile-logo { display: block; }
   .lg-form { align-items: start; padding-top: 56px; }
 }
+
+/* ===== Ideas board ===== */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 16px; }
+.chip { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface, #fff); color: var(--navy); text-decoration: none; font-size: 14px; }
+.chip:hover { border-color: var(--blue); color: var(--blue); }
+.chip.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+.ideas { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.idea { background: var(--surface, #fff); border: 1px solid var(--line); border-inline-start: 4px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.idea.pr-high { border-inline-start-color: var(--bad); }
+.idea.pr-mid { border-inline-start-color: var(--blue); }
+.idea header { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.idea header b { font-size: 16px; line-height: 1.5; }
+.idea p { margin: 0; white-space: pre-wrap; color: var(--muted, #555); line-height: 1.7; }
+.idea footer { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+.idea footer small { color: var(--muted, #777); }
+.idea-st { display: flex; flex-wrap: wrap; gap: 6px; }
+.idea-st button.sm { padding: 4px 10px; font-size: 13px; }
+.idea-st button.on { background: var(--navy); color: #fff; }

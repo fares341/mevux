@@ -205,6 +205,9 @@ export const clients = pgTable("clients", {
   company: text("company"),
   phone: text("phone"),
   email: text("email"),
+  website: text("website"),
+  socials: text("socials"), // one link / handle per line
+  notes: text("notes"),
   country: text("country"),
   source: text("source"),
   need: text("need"),
@@ -366,4 +369,17 @@ export const projectAssets = pgTable("project_assets", {
   renewsAt: timestamp("renews_at", { withTimezone: true }),
   inBrief: boolean("in_brief").notNull().default(true),
   createdAt: created(),
+});
+
+// Owner's ideas board: things to build in the system or change in the company.
+export const ideas = pgTable("ideas", {
+  id: id(),
+  title: text("title").notNull(),
+  details: text("details"),
+  area: text("area").notNull().default("COMPANY"), // SYSTEM | COMPANY | CLIENTS | MARKETING | OTHER
+  status: text("status").notNull().default("NEW"), // NEW | PLANNED | DOING | DONE | DROPPED
+  priority: text("priority").notNull().default("MID"), // HIGH | MID | LOW
+  createdBy: text("created_by"),
+  createdAt: created(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
