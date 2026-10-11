@@ -439,3 +439,23 @@ body:has(.wa) .fab { display: none; } /* the floating assistant button would cov
 .wo-accept { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .wo-accept form { flex-basis: auto; }
 label.chk { display: flex; flex-direction: row; gap: 8px; align-items: center; font-weight: 400; margin-top: 6px; }
+
+/* ===== Form rhythm (one rule for every form with fields) =====
+   Fields stack with a steady 18px gap, field rows align on their inputs (so a label with a hint
+   doesn't push its box lower than its neighbour), and buttons keep their natural width. */
+form:has(> label, > .row, > fieldset, > textarea) { display: flex; flex-direction: column; gap: 18px; }
+form:has(> label, > .row, > fieldset, > textarea) > * { margin-block: 0 !important; }
+form:has(> label, > .row, > fieldset, > textarea) > button,
+form:has(> label, > .row, > fieldset, > textarea) > .actions { align-self: flex-start; }
+form .row { margin-bottom: 0; gap: 16px 18px; align-items: start; }
+label { gap: 7px; line-height: 1.5; }
+/* hints sit under their field, so titles and boxes in a row line up */
+label small, label small.hint { order: 3; margin-top: -2px; font-size: 12px; line-height: 1.5; font-weight: 400; color: var(--muted); }
+textarea { line-height: 1.7; }
+fieldset.evidence { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+fieldset.evidence > * { margin: 0 !important; }
+.wo-issue { padding-top: 4px; }
+.wo, .rnotes { gap: 14px; }
+.card h2 + form { margin-top: 4px; }
+form:has(> label, > .row, > fieldset, > textarea) > h2 { margin-top: 14px !important; margin-bottom: -4px !important; }
+form:has(> label, > .row, > fieldset, > textarea) > h2:first-child { margin-top: 0 !important; }
