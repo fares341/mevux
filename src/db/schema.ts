@@ -295,3 +295,14 @@ export const assistantMessages = pgTable("assistant_messages", {
   content: text("content").notNull(),
   createdAt: created(),
 });
+
+// ===== Phase 5: generated briefs (admin only: they contain prices) =====
+export const projectBriefs = pgTable("project_briefs", {
+  id: id(),
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  lang: text("lang").notNull(),
+  storedName: text("stored_name").notNull().unique(),
+  size: integer("size").notNull(),
+  createdBy: text("created_by"),
+  createdAt: created(),
+});

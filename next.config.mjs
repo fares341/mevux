@@ -9,6 +9,7 @@ const security = [
 export default {
   output: "standalone",
   poweredByHeader: false,
+  serverExternalPackages: ["playwright-core"],
   images: { unoptimized: true },
   experimental: { serverActions: { bodySizeLimit: "26mb" } },
   async headers() { return [{ source: "/:path*", headers: security }]; },

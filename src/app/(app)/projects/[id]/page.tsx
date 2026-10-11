@@ -8,6 +8,10 @@ import { BILLING } from "@/lib/labels";
 import { removeRow, setDelivered, updateProgress, decideDeduction, deleteProject } from "../actions";
 import { EditProject, PaymentForm, CostForm, RoleForm, DeductionForm } from "../forms";
 import { RoleUpload } from "../files-ui";
+import { BriefForm } from "../brief-ui";
+import { deleteBrief } from "../brief-actions";
+import { projectBriefs } from "@/lib/db";
+import { desc } from "drizzle-orm";
 import { loadFiles, FileList, Credentials, FinalFiles } from "../extras";
 
 const fmt = (d: Date | null) => (d ? d.toLocaleDateString("ar-EG", { day: "numeric", month: "short", year: "numeric" }) : "—");
@@ -56,6 +60,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   ]);
   if (!p) notFound();
   const files = await loadFiles(p.id);
+  const briefs = await db.select().from(projectBriefs).where(eq(projectBriefs.projectId, p.id)).orderBy(desc(projectBriefs.createdAt));
   const c = calc(p, r);
   const name = (uid: string) => team.find((u) => u.id === uid)?.name || "—";
   const userOpts = team.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name, banned: openBans.some((b) => b.userId === u.id) }));
@@ -107,6 +112,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </div>); })}
       <details open={!p.roles.length} style={{ marginTop: 14 }}><summary>إضافة دور</summary><div style={{ marginTop: 12 }}><RoleForm projectId={p.id} users={userOpts} label="إضافة الدور" /></div></details>
       {openBans.length > 0 && <p className="sub">محرومين من المشروع ده: {openBans.map((b) => name(b.userId)).join("، ")}</p>}
+    </section>
+
+    <section className="card" style={{ borderTopColor: "var(--pink)" }}><h2>البريف</h2>
+      {briefs.map((b) => <div key={b.id} className="actions" style={{ justifyContent: "space-between", borderBottom: "1px solid var(--line)", paddingBlock: 6 }}>
+        <span><a href={`/api/briefs/${b.id}`} target="_blank" rel="noopener"><b>بريف {b.lang === "ar" ? "عربي" : "English"}</b></a> <span className="sub">· {b.createdAt.toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span></span>
+        <form action={deleteBrief}><input type="hidden" name="id" value={b.id} /><button className="sm ghost">حذف</button></form></div>)}
+      <div style={{ marginTop: 14 }}><b style={{ color: "var(--navy)" }}>توليد بريف جديد</b><div style={{ marginTop: 10 }}>
+        <BriefForm projectId={p.id} hint={p.description || "مثال: الفرعين بيستخدموا كاشيرين، 90% من العملاء بيجوا من الخرايط…"} suppliers={sups.map((s) => ({ id: s.id, label: `${s.provider} · ${s.item} (${s.price} ${CUR[s.currency]} ${BILLING[s.billing]})` }))} />
+      </div></div>
     </section>
 
     <Credentials projectId={p.id} me={me} />
