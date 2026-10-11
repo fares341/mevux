@@ -39,16 +39,15 @@ fi
 
 echo ">> بناء وتشغيل السيستم"
 docker compose up -d --build db app caddy
-docker compose --profile tools run --rm tools npm run db:push
+docker compose --profile tools run --rm tools npm run db:migrate
 docker compose --profile tools run --rm tools npm run seed
 
 echo ">> باك أب يومي لقاعدة البيانات والملفات (آخر 14 يوم)"
 mkdir -p /var/backups/mevix
 cat > /etc/cron.daily/mevix-backup <<EOF
 #!/bin/sh
-cd $(pwd) && docker compose exec -T db pg_dump -U mevix mevix | gzip > /var/backups/mevix/db-\$(date +%F).sql.gz
-cd $(pwd) && docker compose exec -T app tar czf - -C /data uploads > /var/backups/mevix/files-\$(date +%F).tar.gz
-find /var/backups/mevix -name '*.gz' -mtime +14 -delete
+cd $(pwd) && bash deploy/backup.sh daily >/dev/null
+find /var/backups/mevix -maxdepth 1 -name 'daily-*' -mtime +14 -exec rm -rf {} +
 EOF
 chmod +x /etc/cron.daily/mevix-backup
 

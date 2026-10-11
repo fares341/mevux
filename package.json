@@ -5,8 +5,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "db:push": "drizzle-kit push --force",
-    "seed": "tsx scripts/seed.ts"
+    "db:push": "echo \"استخدم npm run db:generate ثم db:migrate. push ممنوع على السيرفر.\" && exit 1",
+    "seed": "tsx scripts/seed.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
     "bcryptjs": "2.4.3",

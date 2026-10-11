@@ -10,16 +10,17 @@ import { rateLimit } from "@/lib/ratelimit";
 const MAX_FAILS = 5, LOCK_MIN = 15;
 const GENERIC = "اسم المستخدم أو كلمة المرور غير صحيحة.";
 
-export async function login(_: unknown, fd: FormData): Promise<{ error?: string }> {
+export async function login(_: unknown, fd: FormData): Promise<{ error?: string; username?: string }> {
   const ip = await clientIp();
   if (!rateLimit("login:" + ip, 10, 10 * 60 * 1000)) return { error: "محاولات كثيرة. حاول بعد 10 دقائق." };
   const username = String(fd.get("username") || "").trim().toLowerCase().slice(0, 64);
   const password = String(fd.get("password") || "").slice(0, 200);
+  const keep = <T extends { error?: string }>(r: T) => ({ ...r, username });
   const u = await db.query.users.findFirst({ where: eq(users.username, username) });
   // Constant-ish work even when user doesn't exist
   const hash = u?.passwordHash ?? "$2a$12$CwTycUXWue0Thq9StjUM0uJ8.Hn1Zl3JpN1yb0b6CjvYxw5H9F7Wi";
   const ok = await bcrypt.compare(password, hash);
-  if (!u || !u.active) { await audit(null, "login_failed", username); return { error: GENERIC }; }
+  if (!u || !u.active) { await audit(null, "login_failed", username); return keep({ error: GENERIC }); }
   if (u.lockedUntil && u.lockedUntil > new Date()) return { error: `الحساب مقفول مؤقتاً. حاول بعد ${LOCK_MIN} دقيقة.` };
   if (!ok) {
     const fails = u.failedLogins + 1;

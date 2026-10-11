@@ -249,3 +249,34 @@ tbody tr:hover { background: #F7F9FD; }
 details > summary { list-style: none; }
 details > summary::before { content: "+"; display: inline-block; width: 18px; color: var(--blue); font-weight: 800; }
 details[open] > summary::before { content: "–"; }
+
+/* ===== Login: brand panel (right in RTL) + calm form ===== */
+.login { display: none; }
+.lg { min-height: 100%; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); background: var(--sunken); }
+.lg-brand { position: relative; overflow: hidden; background: radial-gradient(120% 90% at 100% 100%, #1A3389 0%, rgba(11,23,67,0) 60%), var(--rail); color: #fff; display: flex; flex-direction: column; justify-content: space-between; padding: 48px 56px; }
+.lg-rings { position: absolute; width: 640px; height: 640px; left: -220px; bottom: -200px; opacity: .9; }
+.lg-logo { width: 190px; position: relative; }
+.lg-copy { position: relative; max-width: 420px; }
+.lg-copy h2 { color: #fff; font-size: 34px; line-height: 1.35; font-weight: 800; margin: 0 0 18px; text-wrap: balance; }
+.lg-copy ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.lg-copy li { color: #C9D3EE; font-size: 15px; padding-inline-start: 18px; position: relative; }
+.lg-copy li::before { content: ""; position: absolute; inset-inline-start: 0; top: .7em; width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); }
+.lg-form { display: grid; place-items: center; padding: 32px 20px; }
+.lg-box { width: 100%; max-width: 380px; }
+.lg-box h1 { font-size: 30px; }
+.lg-box .sub { margin: 8px 0 24px; }
+.lg-mobile-logo { display: none; width: 150px; margin-bottom: 22px; }
+.lg-fields { display: flex; flex-direction: column; gap: 16px; }
+.lg-fields input { padding: 12px 14px; font-size: 15px; border-radius: 8px; background: var(--surface); }
+.pw { position: relative; display: block; }
+.pw input { padding-inline-start: 72px; }
+.pw .eye { position: absolute; inset-inline-start: 6px; top: 50%; transform: translateY(-50%); background: transparent; color: var(--blue); padding: 6px 10px; font-size: 12.5px; }
+.pw .eye:hover { background: var(--sunken); }
+.lg-submit { justify-content: center; padding: 13px; font-size: 15px; border-radius: 8px; margin-top: 4px; }
+.lg-foot { color: var(--muted); font-size: 12.5px; margin-top: 22px; }
+@media (max-width: 860px) {
+  .lg { grid-template-columns: 1fr; }
+  .lg-brand { display: none; }
+  .lg-mobile-logo { display: block; }
+  .lg-form { align-items: start; padding-top: 56px; }
+}
