@@ -8,6 +8,7 @@ import { earnings, loadTeamView, STATUS } from "./projects";
 import { STAGES } from "./labels";
 import { removeStored } from "./storage";
 import { audit } from "./audit";
+import { ADMIN_TOOLS, runAdminTool } from "./admin-tools";
 
 // SECURITY MODEL: the model only gets tools that match the signed-in person's role,
 // and every tool re-checks permissions and returns only data that person may see.
@@ -51,6 +52,7 @@ export function toolsFor(u: SessionUser): ToolDef[] {
     fn("finance_summary", "Company finance: closed-project revenue, owner income, company share, team amounts due."),
     fn("project_finance", "Money details of one project.", { project: str("project name") }, ["project"]),
     fn("clients_pipeline", "Clients and their deal stage and next step."),
+    ...ADMIN_TOOLS,
   );
   return t;
 }
@@ -64,6 +66,7 @@ export async function runTool(name: string, args: Record<string, unknown>, ctx: 
   const { u } = ctx;
   const allowed = toolsFor(u).some((t) => t.function.name === name);
   if (!allowed) { await audit(u.id, "assistant_denied_tool", name); return { error: "غير مسموح." }; }
+  if (ADMIN_TOOLS.some((t) => t.function.name === name)) return runAdminTool(name, args, u);
   const a = (k: string) => (typeof args[k] === "string" ? (args[k] as string).trim() : "");
   const vis = () => W.visibleProjects(u);
 

@@ -53,9 +53,11 @@ export async function saveAi(_: R, fd: FormData): Promise<R> {
   const admin = await requireAdmin();
   const m = MODEL.safeParse(fd.get("aiModel") || DEFAULTS.aiModel);
   const am = MODEL.safeParse(fd.get("aiAudioModel") || DEFAULTS.aiAudioModel);
-  if (!m.success || !am.success) return { error: "اسم الموديل بصيغة provider/model، مثل anthropic/claude-sonnet-4.5" };
+  const cm = MODEL.safeParse(fd.get("aiChatModel") || DEFAULTS.aiChatModel);
+  if (!m.success || !am.success || !cm.success) return { error: "اسم الموديل بصيغة provider/model، مثل anthropic/claude-sonnet-4.5" };
   await setSetting("aiModel", m.data);
   await setSetting("aiAudioModel", am.data);
+  await setSetting("aiChatModel", cm.data);
   const key = String(fd.get("apiKey") || "").trim();
   if (key) {
     if (!/^sk-or-[A-Za-z0-9_-]{20,200}$/.test(key)) return { error: "مفتاح OpenRouter غير صحيح. يبدأ بـ sk-or-" };
@@ -78,7 +80,15 @@ export async function testAi(_: R): Promise<R> {
     const j = await r.json();
     const d = j?.data ?? {};
     const left = d.limit == null ? "بدون حد" : `${(Number(d.limit) - Number(d.usage || 0)).toFixed(2)}$ متبقي`;
-    return { ok: `الاتصال يعمل · الاستهلاك ${Number(d.usage || 0).toFixed(2)}$ · ${left}` };
+    const s = await (await import("@/lib/settings")).getSettings();
+    let models = "";
+    try {
+      const ml = await fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(10000) });
+      const ids = new Set(((await ml.json()).data ?? []).map((x: { id: string }) => x.id));
+      const missing = [s.aiModel, s.aiChatModel, s.aiAudioModel].filter((x) => !ids.has(x));
+      models = missing.length ? ` · ⚠ موديلات مش موجودة على OpenRouter: ${missing.join("، ")}` : " · الموديلات التلاتة موجودة";
+    } catch {}
+    return { ok: `الاتصال يعمل · الاستهلاك ${Number(d.usage || 0).toFixed(2)}$ · ${left}${models}` };
   } catch {
     return { error: "تعذر الوصول إلى OpenRouter من السيرفر." };
   }

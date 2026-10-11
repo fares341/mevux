@@ -13,8 +13,9 @@ export const DEFAULTS = {
   clientRefusePct: "100",
   rateSAR: "13",
   rateUSD: "49",
-  aiModel: "anthropic/claude-sonnet-4.5",
-  aiAudioModel: "google/gemini-2.5-flash",
+  aiModel: "anthropic/claude-sonnet-4.5",      // briefs (quality first)
+  aiChatModel: "google/gemini-3.6-flash",       // assistant + search (cheap)
+  aiAudioModel: "google/gemini-3.6-flash",      // voice → text (cheap, good listener)
 } as const;
 export type SettingKey = keyof typeof DEFAULTS;
 

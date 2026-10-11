@@ -10,7 +10,7 @@ export async function aiConfig() {
   const enc = await getRaw("openrouterKey");
   if (!enc) throw new Error("مفتاح OpenRouter مش متسجل. المدير يضيفه من الإعدادات.");
   const s = await getSettings();
-  return { key: decrypt(enc), model: s.aiModel, audioModel: s.aiAudioModel };
+  return { key: decrypt(enc), model: s.aiModel, chatModel: s.aiChatModel, audioModel: s.aiAudioModel };
 }
 
 async function call(body: object, key: string) {
@@ -27,9 +27,10 @@ async function call(body: object, key: string) {
   return j.choices?.[0]?.message as { content?: string | null; tool_calls?: ToolCall[] };
 }
 
-export async function chat(messages: Msg[], tools?: ToolDef[], opts: { json?: boolean; maxTokens?: number } = {}) {
+/** purpose "brief" uses the quality model; "assistant" uses the cheap chat model. */
+export async function chat(messages: Msg[], tools?: ToolDef[], opts: { json?: boolean; maxTokens?: number; purpose?: "brief" | "assistant" } = {}) {
   const c = await aiConfig();
-  return call({ model: c.model, messages, tools, temperature: 0.2, max_tokens: opts.maxTokens ?? 1500, ...(opts.json ? { response_format: { type: "json_object" } } : {}) }, c.key);
+  return call({ model: opts.purpose === "assistant" ? c.chatModel : c.model, messages, tools, temperature: 0.2, max_tokens: opts.maxTokens ?? 1500, ...(opts.json ? { response_format: { type: "json_object" } } : {}) }, c.key);
 }
 
 /** Voice note → text. Audio arrives as 16 kHz mono WAV (base64). */

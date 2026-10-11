@@ -5,6 +5,12 @@ type M = { role: "user" | "assistant"; content: string };
 
 import { toWav } from "@/lib/wav";
 
+// Turns internal paths like /projects/abc or /api/briefs/x into links.
+function Linkify({ text }: { text: string }) {
+  const parts = text.split(/(\/(?:projects|clients|briefs|api\/briefs|chats|finance|team|suppliers|settings|tasks|follow|complaints)(?:\/[\w-]+)?)/g);
+  return <>{parts.map((p, i) => (i % 2 ? <a key={i} href={p} target={p.startsWith("/api/") ? "_blank" : undefined} rel="noopener">{p.startsWith("/api/briefs") ? "افتح البريف" : "افتح"}</a> : p))}</>;
+}
+
 export default function Chat({ initial, hints }: { initial: M[]; hints: string[] }) {
   const [msgs, setMsgs] = useState<M[]>(initial);
   const [text, setText] = useState("");
@@ -57,7 +63,7 @@ export default function Chat({ initial, hints }: { initial: M[]; hints: string[]
   return (<div className="chat card plain">
     <div className="msgs" aria-live="polite">
       {!msgs.length && <div className="hints"><p className="sub">جرّب:</p>{hints.map((h) => <button key={h} className="sm ghost" onClick={() => send({ text: h })} disabled={busy}>{h}</button>)}</div>}
-      {msgs.map((m, i) => <div key={i} className={"bubble " + m.role}>{m.content}</div>)}
+      {msgs.map((m, i) => <div key={i} className={"bubble " + m.role}>{m.role === "assistant" ? <Linkify text={m.content} /> : m.content}</div>)}
       {busy && <div className="bubble assistant typing">بيفكر…</div>}
       <div ref={end} />
     </div>

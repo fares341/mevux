@@ -52,8 +52,9 @@ export function AiForm({ s, hint }: { s: Record<string, string>; hint: string | 
         <label>مفتاح OpenRouter<small>{hint ? `المفتاح الحالي ينتهي بـ ••••${hint} · اتركه فارغاً لعدم التغيير` : "لم يتم إدخال مفتاح بعد"}</small><input id="apiKey" name="apiKey" type="password" dir="ltr" autoComplete="off" placeholder="sk-or-…" /></label>
       </div>
       <div className="row">
-        <label>موديل الشات بوت والبريف<input id="aiModel" name="aiModel" dir="ltr" defaultValue={s.aiModel} required /></label>
-        <label>موديل تحويل الفويس لنص<input id="aiAudioModel" name="aiAudioModel" dir="ltr" defaultValue={s.aiAudioModel} required /></label>
+        <label>موديل البريف<small>جودة الكتابة أهم هنا</small><input id="aiModel" name="aiModel" dir="ltr" defaultValue={s.aiModel} required /></label>
+        <label>موديل المساعد والبحث<small>رخيص وسريع · مثلاً google/gemini-3.5-flash-lite أرخص</small><input id="aiChatModel" name="aiChatModel" dir="ltr" defaultValue={s.aiChatModel} required /></label>
+        <label>موديل تحويل الفويس لنص<small>لازم يدعم الصوت</small><input id="aiAudioModel" name="aiAudioModel" dir="ltr" defaultValue={s.aiAudioModel} required /></label>
       </div>
       <button disabled={p}>حفظ</button>
     </form>
