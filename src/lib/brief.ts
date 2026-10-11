@@ -81,6 +81,7 @@ const L = {
     output: "Deliverable for this track", flow: "How it works", total: "Total", payment: "Payment", amount: "Amount", when: "Due", feeTitle: "Total implementation fee", feeNote: "Covers the full scope described in this proposal.",
     ops: "Running costs", opsNote: "Paid directly to the providers, separate from the implementation fee.", service: "Service", price: "Price", scope: "Project scope", durationLine: "Timeline", footer: "Proposal for", cur: { EGP: "EGP", SAR: "SAR", USD: "USD" } as Record<string, string>, curShort: { EGP: "EGP", SAR: "SAR", USD: "USD" } as Record<string, string> },
 };
+const DECOR = `<svg class="decor" viewBox="0 0 600 600" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#20C6EA"/><stop offset=".55" stop-color="#6A4DF5"/><stop offset="1" stop-color="#E6197F"/></linearGradient></defs><circle cx="300" cy="300" r="250" fill="none" stroke="url(#g)" stroke-width="2" opacity=".55"/><circle cx="300" cy="300" r="190" fill="none" stroke="url(#g)" stroke-width="1.2" opacity=".35"/><circle cx="300" cy="300" r="130" fill="none" stroke="url(#g)" stroke-width="1" opacity=".22"/><circle cx="300" cy="50" r="7" fill="#20C6EA"/><circle cx="512" cy="430" r="5" fill="#E6197F"/></svg>`;
 const BILL_EN: Record<string, string> = { MONTHLY: "monthly", YEARLY: "yearly", PER_MESSAGE: "per message", PER_USAGE: "by usage", ONE_TIME: "one-time" };
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 const n = (x: number) => x.toLocaleString("en-US", { maximumFractionDigits: 4 });
@@ -92,7 +93,7 @@ async function asset(file: string, mime: string) {
 
 export async function renderBrief(c: BriefContent, f: Facts, lang: Lang) {
   const t = L[lang];
-  const [logo, f4, f7, f8] = await Promise.all([asset("logo.png", "image/png"), asset("fonts/Tajawal-Regular.ttf", "font/ttf"), asset("fonts/Tajawal-Bold.ttf", "font/ttf"), asset("fonts/Tajawal-ExtraBold.ttf", "font/ttf")]);
+  const [logo, logoDark, f4, f7, f8] = await Promise.all([asset("logo.png", "image/png"), asset("logo-dark.png", "image/png"), asset("fonts/Tajawal-Regular.ttf", "font/ttf"), asset("fonts/Tajawal-Bold.ttf", "font/ttf"), asset("fonts/Tajawal-ExtraBold.ttf", "font/ttf")]);
   const clientName = f.client?.name ?? f.p.client;
   const branch = f.client?.company || f.p.name;
   const cur = f.p.currency;
@@ -102,12 +103,14 @@ export async function renderBrief(c: BriefContent, f: Facts, lang: Lang) {
   let pageNo = 0;
   const page = (inner: string, dark = false) => {
     pageNo++;
-    return `<section class="page${dark ? " dark" : ""}"><header><div class="logo"><img src="${logo}"></div><small>${t.kind}<br>${esc(branch)}</small></header><main>${inner}</main><footer><span>MEVIX AI · ${t.footer} ${esc(clientName)}</span>${num(`0${pageNo} / 0__TOTAL__`)}</footer></section>`;
+    return `<section class="page${dark ? " dark" : ""}">${dark ? DECOR : ""}<header><div class="logo"><img src="${dark ? logoDark : logo}" alt="MEVIX"></div><small>${t.kind}<br>${esc(branch)}</small></header><main>${inner}</main><footer><span>MEVIX AI · ${t.footer} ${esc(clientName)}</span>${num(`0${pageNo} / 0__TOTAL__`)}</footer></section>`;
   };
 
   // 1 cover
-  pages.push(page(`<div class="pill pink">${t.cover}</div><h1 class="cover">${esc(c.title1)}${c.title2 ? `<br>${esc(c.title2)}` : ""}</h1>
+  const scopeTiles = (c.tracks[0]?.items ?? []).slice(0, 3);
+  pages.push(page(`<div class="pill pink">${t.cover}</div><h1 class="cover">${esc(c.title1)}${c.title2 ? `<br><span>${esc(c.title2)}</span>` : ""}</h1>
     <p class="tagline">${c.tagline.map(esc).join(" · ")}</p><p class="lead">${esc(c.intro)}</p>
+    ${scopeTiles.length ? `<div class="tiles">${scopeTiles.map((x, i) => `<div><i>${num("0" + (i + 1))}</i><b>${esc(x.title)}</b></div>`).join("")}</div>` : ""}
     <div class="for"><small>${t.for}</small><b>${esc(clientName)}</b>${f.client?.company ? `<small>${esc(f.client.company)}</small>` : ""}</div>
     <div class="kpis">${f.weeks ? `<div><b>${num(f.weeks)} ${t.weeks}</b><span>${t.duration}</span></div>` : ""}<div><b>${num(n(f.p.price))} ${t.curShort[cur]}</b><span>${t.fee}</span></div>${monthlyLine ? `<div><b>${num(monthlyLine)}</b><span>${t.monthly}</span></div>` : ""}</div>`, true));
 
@@ -151,15 +154,17 @@ export async function renderBrief(c: BriefContent, f: Facts, lang: Lang) {
 :root{--navy:#152B7B;--deep:#0B1743;--blue:#168FE3;--cyan:#20C6EA;--pink:#E6197F;--ink:#14213D;--muted:#5C6882;--pale:#F4F7FC;--line:#D9E1F0;--light:#EAF5FD}
 *{box-sizing:border-box}body{margin:0;font-family:Tajawal,sans-serif;color:var(--ink)}@page{size:A4;margin:0}
 .page{width:210mm;height:297mm;padding:16mm 17mm 0;position:relative;overflow:hidden;page-break-after:always;background:#fff}
-.page.dark{background:var(--deep);color:#fff}
+.page.dark{background:radial-gradient(120% 80% at 0% 100%,#18307F 0%,rgba(11,23,67,0) 60%),var(--deep);color:#fff}
+.decor{position:absolute;width:110mm;height:110mm;top:44mm;inset-inline-end:-62mm;pointer-events:none}
 header{height:24mm;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--line)}.dark header{border-color:rgba(255,255,255,.18)}
-header .logo{width:40mm}.dark header .logo{background:#fff;border-radius:3px;padding:2mm}header img{width:100%;display:block}
+header .logo{width:40mm}.dark header .logo{width:46mm}header img{width:100%;display:block}
 header small{font-size:10px;color:var(--muted);line-height:1.9}.dark header small{color:#C9D3EE}
 main{padding-top:8mm}
-.pill{display:inline-block;background:var(--blue);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:4px}.pill.pink{background:var(--pink);margin-top:14mm}
-h1{font-size:30px;font-weight:800;color:var(--navy);margin:12px 0 10px;line-height:1.35}.cover{font-size:42px;color:#fff;margin:9mm 0 6mm}
-.tagline{color:var(--cyan);font-size:20px;font-weight:700;margin:0 0 8mm}.lead{font-size:15px;line-height:2;color:#E3E8F6;max-width:165mm}
-.for{border-inline-start:3px solid var(--pink);padding-inline-start:12px;margin-top:14mm;display:flex;flex-direction:column;gap:6px}.for small{color:#C9D3EE;font-size:12px}.for b{font-size:22px}
+.pill{display:inline-block;background:var(--blue);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:4px}.pill.pink{background:var(--pink);margin-top:12mm}
+h1{font-size:30px;font-weight:800;color:var(--navy);margin:12px 0 10px;line-height:1.35}.cover{font-size:46px;color:#fff;margin:8mm 0 5mm;line-height:1.3;max-width:150mm}.cover span{color:#fff;opacity:.92}
+.tagline{color:var(--cyan);font-size:20px;font-weight:700;margin:0 0 8mm}.lead{font-size:15px;line-height:2;color:#E3E8F6;max-width:128mm}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:4mm;margin-top:10mm;max-width:176mm}.tiles div{border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.04);border-radius:5px;padding:4mm 5mm;display:flex;flex-direction:column;gap:2mm}.tiles i{font-style:normal;color:var(--cyan);font-size:11px;font-weight:700}.tiles b{font-size:14px;line-height:1.5}
+.for{border-inline-start:3px solid var(--pink);padding-inline-start:12px;margin-top:11mm;display:flex;flex-direction:column;gap:6px}.for small{color:#C9D3EE;font-size:12px}.for b{font-size:22px}
 .kpis{position:absolute;bottom:26mm;left:17mm;right:17mm;border-top:1px solid rgba(255,255,255,.18);padding-top:8mm;display:flex;gap:10mm}.kpis div{flex:1}.kpis b{display:block;color:var(--cyan);font-size:19px;font-weight:800}.kpis span{font-size:12px;color:#C9D3EE}
 h2{font-size:18px;color:var(--navy);margin:14px 0 8px}h3{font-size:16px;color:var(--navy);margin:0 0 6px;font-weight:800}
 p{font-size:13.5px;line-height:1.9;margin:4px 0}.sub{color:var(--muted);font-size:13px}
@@ -188,11 +193,12 @@ export async function toPdf(html: string): Promise<Buffer> {
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "load" });
-    await page.evaluate(async () => {
+    // Passed as a string so bundlers can't inject helpers into the browser-side code.
+    await page.evaluate(`(async () => {
       await document.fonts.ready;
-      const over = (s: Element) => { const m = s.querySelector("main")!, f = s.querySelector("footer")!; return m.getBoundingClientRect().bottom > f.getBoundingClientRect().top - 6; };
+      const over = (s) => { const m = s.querySelector("main"), f = s.querySelector("footer"); return m.getBoundingClientRect().bottom > f.getBoundingClientRect().top - 6; };
       for (const s of document.querySelectorAll(".page:not(.dark)")) { if (over(s)) s.classList.add("tight"); if (over(s)) s.classList.add("tighter"); }
-    });
+    })()`);
     return Buffer.from(await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true }));
   } finally { await browser.close(); }
 }
