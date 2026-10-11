@@ -141,7 +141,7 @@ export async function runAdminTool(name: string, a: Record<string, unknown>, u: 
       const [c] = await db.insert(clients).values({ name: s("name")!, company: s("company"), phone: s("phone"), email: s("email"), website: s("website"), socials: s("socials"), source: s("source"), notes: s("notes"), country: s("country"), need: s("need"), stage, nextStep: s("next_step"), nextDate: s("next_date") ? new Date(s("next_date")!) : null }).returning();
       await db.insert(clientEvents).values({ clientId: c.id, stage, note: "اتضاف من المساعد", by: u.id });
       revalidatePath("/clients");
-      return { created: c.name, stage: STAGES[stage], saved: { phone: c.phone, email: c.email, website: c.website, socials: c.socials, company: c.company }, link: `/clients/${c.id}` };
+      return { created: c.name, stage: STAGES[stage], whereToFind: "صفحة العملاء", saved: { phone: c.phone, email: c.email, website: c.website, socials: c.socials, company: c.company }, link: `/clients/${c.id}` };
     }
     case "update_client": {
       const c = pick(await allClients(), s("client")!, "عميل");
@@ -330,7 +330,7 @@ export async function runAdminTool(name: string, a: Record<string, unknown>, u: 
       const kind = s("files_kind") || "FINAL";
       const stored = await storeFiles(files, u, kind === "FINAL" ? { projectId: p.id, kind } : { clientId: cl.id, kind: kind.replace("CLIENT_", "") });
       revalidatePath("/projects"); revalidatePath("/clients"); revalidatePath("/finance");
-      return { client: cl.name, project: p.name, status: STATUS[status], paid: paid ?? 0, currency: cur, team: added, files: stored, link: `/projects/${p.id}`,
+      return { client: cl.name, project: p.name, status: STATUS[status], paid: paid ?? 0, currency: cur, team: added, files: stored, link: `/projects/${p.id}`, clientLink: `/clients/${cl.id}`, whereToFind: `المشروع في المشاريع (تبويب الكل أو ${status === "CLOSED" ? "خلصناه" : "شغال"})، والعميل في العملاء`,
         note: added.length && status === "CLOSED" ? (a.team_already_paid === false ? "أجور الفريق متسجلة كمستحقة لسه ما اتصرفتش." : "أجور الفريق اتسجلت إنها اتصرفت.") : undefined };
     }
     case "attach_files": {

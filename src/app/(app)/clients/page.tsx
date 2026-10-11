@@ -8,12 +8,17 @@ import { NewClient } from "./forms";
 const fmt = (x: Date | null) => (x ? x.toLocaleDateString("ar-EG", { day: "numeric", month: "short" }) : "");
 const today = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
 
-export default async function Clients({ searchParams }: { searchParams: Promise<{ stage?: string; new?: string }> }) {
+export default async function Clients({ searchParams }: { searchParams: Promise<{ stage?: string; new?: string; view?: string; q?: string }> }) {
   await requireAdmin();
   const sp = await searchParams;
   const [all, ps] = await Promise.all([db.select().from(clients).orderBy(desc(clients.updatedAt)), db.select({ clientId: projects.clientId, status: projects.status }).from(projects)]);
   const count = (s: Stage) => all.filter((c) => c.stage === s).length;
-  const list = sp.stage ? all.filter((c) => c.stage === sp.stage) : all.filter((c) => !["LOST", "DONE"].includes(c.stage));
+  // Default shows everyone, so a client added as "done" (old work) never looks like it vanished.
+  const view = sp.stage ? "stage" : sp.view === "open" ? "open" : "all";
+  const q = (sp.q || "").trim().toLowerCase();
+  const base = sp.stage ? all.filter((c) => c.stage === sp.stage) : view === "open" ? all.filter((c) => !["LOST", "DONE"].includes(c.stage)) : all;
+  const list = q ? base.filter((c) => [c.name, c.company, c.phone, c.email, c.website].some((x) => x?.toLowerCase().includes(q))) : base;
+  const openCount = all.filter((c) => !["LOST", "DONE"].includes(c.stage)).length;
   const overdue = all.filter((c) => c.nextDate && c.nextDate < today() && !["LOST", "DONE"].includes(c.stage));
   const activeProjects = (id: string) => ps.filter((p) => p.clientId === id && !["CLOSED", "CANCELLED"].includes(p.status)).length;
   return (<>
@@ -26,9 +31,16 @@ export default async function Clients({ searchParams }: { searchParams: Promise<
         <span className="n num">{i + 1}</span><b>{STAGES[s]}</b><span className="num c">{count(s)}</span></Link>)}
     </div>
     <div className="actions" style={{ marginBottom: 16 }}>
-      <Link href="/clients" className={!sp.stage ? "btn" : "btn ghost-link"}>المفتوحين</Link>
+      <Link href="/clients" className={view === "all" ? "btn" : "btn ghost-link"}>كل العملاء <span className="num">({all.length})</span></Link>
+      <Link href="/clients?view=open" className={view === "open" ? "btn" : "btn ghost-link"}>المفتوحين <span className="num">({openCount})</span></Link>
+      <Link href="/clients?stage=DONE" className={sp.stage === "DONE" ? "btn" : "btn ghost-link"}>{STAGES.DONE} <span className="num">({count("DONE")})</span></Link>
       {(["ON_HOLD", "LOST"] as Stage[]).map((s) => <Link key={s} href={`/clients?stage=${s}`} className={sp.stage === s ? "btn" : "btn ghost-link"}>{STAGES[s]} <span className="num">({count(s)})</span></Link>)}
     </div>
+    <form className="actions" style={{ marginBottom: 16 }} action="/clients">
+      {sp.stage && <input type="hidden" name="stage" value={sp.stage} />}{view === "open" && <input type="hidden" name="view" value="open" />}
+      <input name="q" defaultValue={sp.q || ""} placeholder="دوّر باسم العميل أو رقمه أو الشركة" aria-label="بحث في العملاء" style={{ maxWidth: 360 }} />
+      <button className="ghost">بحث</button>
+    </form>
     {overdue.length > 0 && !sp.stage && <div className="msg bad">{overdue.length} عميل فات موعد الخطوة الجاية معاهم: {overdue.map((c) => c.name).join("، ")}</div>}
 
     {list.length ? <div className="card plain table-wrap"><table>
@@ -40,6 +52,6 @@ export default async function Clients({ searchParams }: { searchParams: Promise<
         <td>{c.nextDate ? <span className={late ? "pill bad" : ""}>{fmt(c.nextDate)}</span> : "—"}</td>
         <td className="num">{activeProjects(c.id) || "—"}</td>
         <td className="sub">{fmt(c.updatedAt)}</td></tr>); })}</tbody></table></div>
-      : <div className="note">مفيش عملاء هنا. {!all.length && "ابدأ بإضافة أول عميل."}</div>}
+      : <div className="note">{q ? `مفيش عميل بالاسم ده "${sp.q}".` : "مفيش عملاء هنا."} {!all.length && "ابدأ بإضافة أول عميل."}</div>}
   </>);
 }

@@ -10,6 +10,7 @@ const pill = (s: string) => ({ CLOSED: "ok", CANCELLED: "bad", DELIVERED: "info"
 const fmt = (d: Date | null) => (d ? d.toLocaleDateString("ar-EG", { day: "numeric", month: "short" }) : "—");
 
 const GROUPS = {
+  all: { label: "الكل", hint: "", st: ["MEETING", "BRIEF", "APPROVED", "IN_PROGRESS", "DELIVERED", "CLOSED", "CANCELLED"] },
   pipeline: { label: "جديد", hint: "ميتنج وبريف", st: ["MEETING", "BRIEF"] },
   active: { label: "شغال", hint: "موافقة، تنفيذ، اتسلّم ومستني الدفع", st: ["APPROVED", "IN_PROGRESS", "DELIVERED"] },
   done: { label: "خلصناه", hint: "مقفول ومدفوع", st: ["CLOSED"] },
@@ -18,7 +19,7 @@ const GROUPS = {
 type G = keyof typeof GROUPS;
 
 function Tabs({ tab, counts, admin }: { tab: string; counts: Record<string, number>; admin: boolean }) {
-  const keys = (admin ? ["active", "pipeline", "done", "cancelled"] : ["active", "done"]) as G[];
+  const keys = (admin ? ["all", "active", "pipeline", "done", "cancelled"] : ["active", "done"]) as G[];
   return (<div className="actions" style={{ marginBottom: 18 }} role="tablist">
     {keys.map((k) => <Link key={k} href={`/projects?tab=${k}`} role="tab" aria-selected={tab === k} className={tab === k ? "btn" : "btn ghost-link"}>{admin || k === "active" ? GROUPS[k].label : "اللي خلصته"} <span className="num">({counts[k] ?? 0})</span></Link>)}
     {admin && <Link href="/projects?tab=new" className={tab === "new" ? "btn" : "btn ghost-link"}>+ مشروع جديد</Link>}
@@ -28,7 +29,8 @@ function Tabs({ tab, counts, admin }: { tab: string; counts: Record<string, numb
 export default async function Projects({ searchParams }: { searchParams: Promise<{ tab?: string; client?: string }> }) {
   const me = await requireUser();
   const sp = await searchParams;
-  const tab = sp.tab || "active";
+  // Admin lands on everything, so a finished (imported) project is never out of sight.
+  const tab = sp.tab || (me.role === "ADMIN" ? "all" : "active");
   if (me.role !== "ADMIN") {
     const all = await loadTeamView(false);
     const mineDone = all.filter((p) => p.status === "CLOSED" && p.roles.some((r) => r.members.some((m) => m.userId === me.id)));
@@ -49,7 +51,7 @@ export default async function Projects({ searchParams }: { searchParams: Promise
   }
   const [all, r] = await Promise.all([loadProjects(), rules()]);
   const counts = Object.fromEntries(Object.entries(GROUPS).map(([k, g]) => [k, all.filter((p) => (g.st as readonly string[]).includes(p.status)).length]));
-  const g = GROUPS[(tab in GROUPS ? tab : "active") as G];
+  const g = GROUPS[(tab in GROUPS ? tab : "all") as G];
   const ps = tab === "new" ? [] : all.filter((p) => (g.st as readonly string[]).includes(p.status));
   return (<>
     <div className="head"><div><span className="tag">العمل</span><h1>المشاريع</h1><p className="sub">الأرقام بالجنيه.</p></div></div>
