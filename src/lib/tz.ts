@@ -19,3 +19,8 @@ export function dateToCairoInput(d: Date | null | undefined): string {
   return `${g("year")}-${g("month")}-${g("day")}T${g("hour")}:${g("minute")}`;
 }
 export const fmtCairo = (d: Date | null | undefined, withTime = true) => d ? d.toLocaleString("ar-EG", { timeZone: TZ, weekday: "long", day: "numeric", month: "long", ...(withTime ? { hour: "numeric", minute: "2-digit" } : {}) }) : "—";
+/** 23:59:59 today in Cairo. */
+export function cairoEndOfDay(now = new Date()): Date {
+  const today = dateToCairoInput(now).slice(0, 10);
+  return new Date(cairoToDate(today + "T23:59")!.getTime() + 59999);
+}

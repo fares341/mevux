@@ -41,6 +41,9 @@ export function toolsFor(u: SessionUser): ToolDef[] {
     fn("file_complaint", "File a complaint about another person's work in a project I am in. Any files/images sent in this message are attached as evidence (admin only). The reporter's name is hidden from them.", { project: str("project name"), against: str("person's name"), text: str("the problem in detail"), evidence: str("evidence if any") }, ["project", "against", "text"]),
     fn("my_complaints", "Complaints about me or filed by me."),
     fn("my_money", "MY OWN earnings, deductions and payouts only."),
+    fn("add_my_todo", "Add something to MY personal to-do list (private, only I see it): a task with an optional time, or an idea to remember.", { title: str("the task or idea"), kind: { type: "string", enum: ["TASK", "IDEA"] }, due: str("when, 'YYYY-MM-DD HH:mm' Cairo time, optional"), details: str("details, optional") }, ["title"]),
+    fn("my_todos", "MY personal to-do list.", { view: { type: "string", enum: ["open", "ideas", "done"] } }),
+    fn("done_my_todo", "Mark one of MY personal to-dos done (or undo).", { title: str("words from the item's title") }, ["title"]),
   ];
   if (u.role !== "MEMBER") t.push(
     fn("follow_up", "Who is late, overdue tasks, who did not post an update today."),
@@ -135,6 +138,24 @@ export async function runTool(name: string, args: Record<string, unknown>, ctx: 
     }
     case "my_complaints": {
       return (await W.listComplaints({ ...u, role: "MEMBER" })).map((c) => ({ project: c.project, against: c.mine ? c.against : "إنت", text: c.text, status: W.COMPLAINT_ST[c.status], yourResponse: c.againstId === u.id ? c.response : undefined }));
+    }
+    case "add_my_todo": {
+      const { addTodo } = await import("./todos"); const { cairoToDate, fmtCairo } = await import("./tz");
+      const due = a("due") ? cairoToDate(a("due").replace(" ", "T")) : null;
+      const t = await addTodo(u, { title: a("title"), kind: a("kind") || "TASK", details: a("details"), dueAt: due });
+      return { saved: t.title, kind: t.kind === "IDEA" ? "فكرة" : "مهمة", when: t.dueAt ? fmtCairo(t.dueAt) : undefined, where: "/tasks?view=me" };
+    }
+    case "my_todos": {
+      const { myTodos } = await import("./todos"); const { fmtCairo } = await import("./tz");
+      const v = (["open", "ideas", "done"] as const).find((x) => x === a("view")) ?? "open";
+      return (await myTodos(u, v)).map((t) => ({ item: t.title, details: t.details || undefined, when: t.dueAt ? fmtCairo(t.dueAt) : undefined, overdue: !t.doneAt && t.dueAt && t.dueAt < new Date() ? true : undefined, done: !!t.doneAt }));
+    }
+    case "done_my_todo": {
+      const { myTodos, toggleTodo } = await import("./todos");
+      const list = [...(await myTodos(u, "open")), ...(await myTodos(u, "ideas"))].map((t) => ({ ...t, name: t.title }));
+      const t = pick(list, a("title"), "حاجة في قايمتك");
+      await toggleTodo(u, t.id);
+      return { done: t.title };
     }
     case "my_money": {
       const { map } = await earnings();

@@ -3,22 +3,73 @@ import { requireUser } from "@/lib/auth";
 import { listTasks, visibleProjects, activeUsers, TASK_ST, type TaskSt } from "@/lib/work";
 import { taskStatusAction } from "../work-actions";
 import { TaskForm } from "../work-forms";
+import { myTodos } from "@/lib/todos";
+import { toggleTodoAction, deleteTodoAction, editTodoAction } from "./todo-actions";
+import TodoForm from "./todo-form";
+import { fmtCairo, dateToCairoInput, cairoEndOfDay } from "@/lib/tz";
+
+function dueChip(d: Date | null, done: boolean) {
+  if (!d) return null;
+  const now = new Date(), end = cairoEndOfDay();
+  const cls = done ? "" : d < now ? "bad" : d <= end ? "warn" : "info";
+  const label = !done && d < now ? "فات: " : !done && d <= end ? "النهارده: " : "";
+  return <span className={"pill " + cls}>{label}{d.toLocaleString("ar-EG", { timeZone: "Africa/Cairo", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>;
+}
+
+async function MyList({ sub }: { sub: "open" | "ideas" | "done" }) {
+  const u = await requireUser();
+  const [items, open, ideas] = await Promise.all([myTodos(u, sub), myTodos(u, "open"), myTodos(u, "ideas")]);
+  return (<>
+    <section className="card"><h2>قايمتي</h2>
+      <p className="sub" style={{ marginTop: -6 }}>مهامك وأفكارك عشان ما تنساش. محدش بيشوفها غيرك، حتى المدير. وتقدر تقول للمساعد: «فكّرني أكلّم فلان بكرة الساعة 11».</p>
+      <TodoForm defaultKind={sub === "ideas" ? "IDEA" : "TASK"} />
+    </section>
+    <div className="actions" style={{ marginBottom: 12 }}>
+      {([["open", `مهام مفتوحة (${open.length})`], ["ideas", `أفكار (${ideas.length})`], ["done", "اللي خلصت"]] as const).map(([k, l]) => <Link key={k} href={`/tasks?view=me&sub=${k}`} className={sub === k ? "btn sm" : "btn ghost-link sm"}>{l}</Link>)}
+    </div>
+    {items.length ? <ul className="todo-list">{items.map((t) => (<li key={t.id} className={t.doneAt ? "done" : ""}>
+      <form action={toggleTodoAction}><input type="hidden" name="id" value={t.id} /><button className="todo-check" aria-pressed={!!t.doneAt} aria-label={t.doneAt ? "رجّعها مفتوحة" : "خلصت"}>{t.doneAt ? "✓" : ""}</button></form>
+      <div className="todo-body">
+        <div className="todo-title">{t.kind === "IDEA" && <span aria-hidden="true">💡 </span>}{t.title}</div>
+        {t.details && <div className="todo-details">{t.details}</div>}
+        <div className="todo-meta">{dueChip(t.dueAt, !!t.doneAt)}{t.doneAt && <small>خلصت {fmtCairo(t.doneAt)}</small>}</div>
+      </div>
+      <details className="todo-edit"><summary aria-label="تعديل">تعديل</summary>
+        <form action={editTodoAction}><input type="hidden" name="id" value={t.id} />
+          <label>العنوان<input name="title" defaultValue={t.title} /></label>
+          <label>التفاصيل<textarea name="details" rows={2} defaultValue={t.details ?? ""} /></label>
+          <div className="row"><label>إمتى<input type="datetime-local" name="due" defaultValue={dateToCairoInput(t.dueAt)} /></label>
+            <label>النوع<select name="kind" defaultValue={t.kind}><option value="TASK">مهمة</option><option value="IDEA">فكرة</option></select></label></div>
+          <div className="actions"><button className="sm">حفظ</button></div>
+        </form>
+        <form action={deleteTodoAction} style={{ marginTop: 8 }}><input type="hidden" name="id" value={t.id} /><button className="sm ghost">مسح</button></form>
+      </details>
+    </li>))}</ul> : <div className="note">{sub === "open" ? "مفيش مهام مفتوحة. اكتب أول مهمة فوق." : sub === "ideas" ? "مفيش أفكار متسجلة لسه." : "لسه ما خلصتش حاجة من القايمة."}</div>}
+  </>);
+}
 
 const fmt = (d: Date | null) => (d ? d.toLocaleDateString("ar-EG", { day: "numeric", month: "short" }) : "—");
 const PILL: Record<string, string> = { TODO: "info", DOING: "warn", REVIEW: "info", DONE: "ok", BLOCKED: "bad" };
 
-export default async function Tasks({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
+export default async function Tasks({ searchParams }: { searchParams: Promise<{ view?: string; sub?: string }> }) {
   const u = await requireUser();
-  const view = (await searchParams).view || "mine";
+  const sp = await searchParams;
+  const view = sp.view || "me";
+  const tabs = <div className="actions" style={{ marginBottom: 16 }}>
+    {[["me", "قايمتي"], ["mine", "مهام المشاريع"], ["all", "كل مهام المشاريع"], ["done", "مهام مشاريع خلصت"]].map(([k, l]) => <Link key={k} href={`/tasks?view=${k}`} className={view === k ? "btn" : "btn ghost-link"}>{l}</Link>)}
+  </div>;
+  if (view === "me") return (<>
+    <div className="head"><div><span className="tag">العمل</span><h1>المهام</h1><p className="sub">قايمتك الشخصية، ومهام المشاريع اللي اتوزعت عليك.</p></div></div>
+    {tabs}
+    <MyList sub={sp.sub === "ideas" || sp.sub === "done" ? sp.sub : "open"} />
+  </>);
   const lead = u.role !== "MEMBER";
   const [list, projects, people] = await Promise.all([listTasks(u, { mine: view === "mine", open: view !== "done" }), visibleProjects(u), activeUsers()]);
   const rows = view === "done" ? list.filter((t) => t.status === "DONE") : list;
   const now = new Date();
   return (<>
     <div className="head"><div><span className="tag">العمل</span><h1>المهام</h1><p className="sub">كل واحد يحدّث حالة مهامه، والمدير والتيم ليد بيوزّعوها.</p></div></div>
-    <div className="actions" style={{ marginBottom: 16 }}>
-      {[["mine", "مهامي"], ["all", "كل المهام المفتوحة"], ["done", "اللي خلصت"]].map(([k, l]) => <Link key={k} href={`/tasks?view=${k}`} className={view === k ? "btn" : "btn ghost-link"}>{l}</Link>)}
-    </div>
+    {tabs}
     {lead && <div className="card"><details><summary>مهمة جديدة</summary><div style={{ marginTop: 12 }}><TaskForm projects={projects.map((p) => ({ id: p.id, name: p.name }))} people={people} /></div></details></div>}
     {rows.length ? <div className="card plain table-wrap"><table>
       <thead><tr><th>المهمة</th><th>المشروع</th><th>مسؤول</th><th>الموعد</th><th>الحالة</th></tr></thead>

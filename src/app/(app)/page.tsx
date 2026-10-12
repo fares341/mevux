@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { lateDaysFor, cutoff } from "@/lib/finance";
 import { fmtCairo } from "@/lib/tz";
+import { todosDueToday } from "@/lib/todos";
 import { and, asc, desc, eq, gte, inArray, isNotNull, lte, ne, notInArray } from "drizzle-orm";
 import { requireUser, type SessionUser } from "@/lib/auth";
 import { db, users, suppliers, clients, complaints, deductions, tasks, projectRoles, roleMembers, projects } from "@/lib/db";
@@ -49,7 +50,9 @@ async function AdminToday({ u, greet }: { u: SessionUser; greet: string }) {
     ...wo.filter((x) => x.r.extStatus === "PENDING").map((x) => ({ level: "warn", title: <>طلب تمديد على «{x.r.title}»</>, sub: `${x.project} · ${x.r.extReason ?? ""}`, href: `/projects/${x.projectId}?tab=team`, cta: "رد" }) as Item),
     ...wo.filter((x) => !x.r.acceptedAt && x.r.issuedAt! < dayAgo).map((x) => ({ level: "bad", title: <>«{x.r.title}» ما اتستلمش من أكتر من يوم</>, sub: x.project, href: `/projects/${x.projectId}?tab=team`, cta: "افتح" }) as Item),
   ];
+  const myDue = await todosDueToday(u);
   const items: Item[] = [
+    ...myDue.map((t) => ({ level: t.dueAt! < new Date() ? "bad" : "warn", title: <>📝 {t.title}</>, sub: `من قايمتك · ${fmtCairo(t.dueAt)}`, href: "/tasks?view=me", cta: "قايمتي" }) as Item),
     ...woItems,
     ...subs.map((x) => ({ level: x.overdue ? "bad" : "warn", title: <>اشتراك {x.name} · <span className="num">{x.fee.toLocaleString("en-US")}</span> {x.currency === "EGP" ? "ج" : x.currency === "SAR" ? "ريال" : "$"}</>, sub: `${x.client} · ${x.overdue ? `متأخر ${-x.days} يوم` : x.days === 0 ? "مستحق النهارده" : `مستحق بعد ${x.days} يوم`}`, href: `/projects/${x.id}?tab=money`, cta: "سجّل الدفعة" }) as Item),
     ...follow.map((c) => ({ level: c.nextDate! < today ? "bad" : "info", title: <>متابعة {c.name}: {c.nextStep || stageLabel(c)}</>, sub: `${day(c.nextDate!)} · ${stageLabel(c)}`, href: `/clients/${c.id}`, cta: "افتح العميل" }) as Item),
@@ -99,7 +102,9 @@ async function TeamToday({ u, greet }: { u: SessionUser; greet: string }) {
     feed(u, { userId: u.id, since: startToday(), limit: 1 }),
   ]);
   const now = new Date();
+  const myDue = await todosDueToday(u);
   const items: Item[] = [
+    ...myDue.map((t) => ({ level: t.dueAt! < now ? "bad" : "warn", title: <>📝 {t.title}</>, sub: `من قايمتك · ${fmtCairo(t.dueAt)}`, href: "/tasks?view=me", cta: "قايمتي" }) as Item),
     ...roles.filter((r) => r.issuedAt && !r.acceptedAt).map((r) => ({ level: "bad", title: <>📋 أمر شغل جديد: {r.title}</>, sub: `${r.project} · اقرا التفاصيل ودوس «استلمت وفهمت»`, href: `/projects/${r.projectId}`, cta: "افتح" }) as Item),
     ...roles.filter((r) => r.reviewStatus === "REWORK").map((r) => ({ level: "bad", title: <>🔁 {r.title} محتاج تعديل</>, sub: `${r.project} · لحد ${fmtCairo(r.reworkDueAt)}`, href: `/projects/${r.projectId}`, cta: "افتح" }) as Item),
     ...roles.filter((r) => !r.deliveredAt && lateDaysFor(r) > 0).map((r) => ({ level: "bad", title: <>{r.title} في {r.project} متأخر {lateDaysFor(r)} يوم</>, sub: `الخصم بيزيد كل يوم. سلّم أو كلّم المدير.`, href: `/projects/${r.projectId}`, cta: "افتح" }) as Item),

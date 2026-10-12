@@ -443,3 +443,17 @@ export const roleNotes = pgTable("role_notes", {
   isVoice: boolean("is_voice").notNull().default(false),
   createdAt: created(),
 });
+
+// Personal to-do list: every person (admin included) keeps their own tasks and ideas.
+// Private: only the owner ever sees their items.
+export const todos = pgTable("todos", {
+  id: id(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  details: text("details"),
+  kind: text("kind").notNull().default("TASK"), // TASK | IDEA
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  doneAt: timestamp("done_at", { withTimezone: true }),
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }), // optional link
+  createdAt: created(),
+});
