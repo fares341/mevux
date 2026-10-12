@@ -5,16 +5,30 @@ type R = { ok?: string; error?: string };
 const Msg = ({ s }: { s: R }) => s?.error ? <div className="msg bad" role="alert">{s.error}</div> : s?.ok ? <div className="msg ok">{s.ok}</div> : null;
 type P = { id: string; name: string };
 
-export function TaskForm({ projects, people }: { projects: P[]; people: P[] }) {
+export function TaskForm({ projects }: { projects: (P & { members: P[] })[] }) {
   const [s, a, p] = useActionState(createTaskAction, {});
-  return (<form action={a}><Msg s={s} />
+  const [pid, setPid] = useState("");
+  const [picked, setPicked] = useState<string[]>([]);
+  const form = useRef<HTMLFormElement>(null);
+  const members = projects.find((x) => x.id === pid)?.members ?? [];
+  useEffect(() => { if (s?.ok) { form.current?.reset(); setPicked([]); } }, [s]);
+  const toggle = (id: string) => setPicked((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]));
+  return (<form action={a} ref={form}><Msg s={s} />
     <div className="row">
-      <label>المشروع<select id="t-proj" name="projectId" required defaultValue="">{<option value="">— اختر —</option>}{projects.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+      <label>المشروع<select id="t-proj" name="projectId" required value={pid} onChange={(e) => { setPid(e.target.value); setPicked([]); }}><option value="">— اختر —</option>{projects.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
       <label>المهمة<input id="t-title" name="title" required maxLength={200} /></label>
-      <label>مسؤول عنها<select id="t-who" name="assigneeId" defaultValue=""><option value="">—</option>{people.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
       <label>الموعد<input id="t-due" name="dueDate" type="date" /></label>
     </div>
-    <label style={{ marginBottom: 12 }}>تفاصيل<textarea id="t-details" name="details" /></label>
+    <fieldset className="people-pick">
+      <legend>مين هيشتغل عليها {picked.length > 1 && <span className="pill info">مهمة مشتركة · {picked.length}</span>}</legend>
+      {!pid ? <p className="sub">اختار المشروع الأول، وهيظهرلك فريقه.</p>
+        : members.length ? <div className="chips">{members.map((m) => <label key={m.id} className={"chip pick" + (picked.includes(m.id) ? " on" : "")}>
+            <input type="checkbox" name="assigneeIds" value={m.id} checked={picked.includes(m.id)} onChange={() => toggle(m.id)} />{m.name}</label>)}
+            {members.length > 1 && <button type="button" className="linkish" onClick={() => setPicked(picked.length === members.length ? [] : members.map((m) => m.id))}>{picked.length === members.length ? "شيل الكل" : "الفريق كله"}</button>}</div>
+        : <p className="sub">المشروع ده لسه مفيهوش فريق. ضيف أدوار الأول.</p>}
+      <small className="sub">تقدر تختار واحد أو أكتر. كلهم هيشوفوها في مهامهم ويقدروا يحدّثوا حالتها.</small>
+    </fieldset>
+    <label>تفاصيل<textarea id="t-details" name="details" /></label>
     <button disabled={p}>إضافة المهمة</button>
   </form>);
 }

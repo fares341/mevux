@@ -457,3 +457,10 @@ export const todos = pgTable("todos", {
   projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }), // optional link
   createdAt: created(),
 });
+
+// A project task can be shared by several people (all from that project's team).
+export const taskAssignees = pgTable("task_assignees", {
+  id: id(),
+  taskId: text("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+});

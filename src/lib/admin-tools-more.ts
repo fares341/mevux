@@ -358,14 +358,18 @@ export async function runMoreTool(name: string, a: Record<string, unknown>, u: S
       return { project: p.name, role: r.title, people: r.members.map((m) => m.name), result: done(res), link: `/projects/${p.id}?tab=team` };
     }
     case "list_tasks": {
+      const { taskAssignees } = await import("./db");
       let rows = await db.select().from(tasks).orderBy(desc(tasks.createdAt));
       const ps = await db.select({ id: projects.id, name: projects.name }).from(projects);
       const us = await db.select({ id: users.id, name: users.name }).from(users);
+      const ta = await db.select().from(taskAssignees);
+      const people = (tid: string, fallback: string | null) => { const ids = ta.filter((x) => x.taskId === tid).map((x) => x.userId); return (ids.length ? ids : fallback ? [fallback] : []); };
       if (s("project")) { const p = pick(ps, s("project")!, "مشروع", (x) => x.name); rows = rows.filter((t) => t.projectId === p.id); }
-      if (s("person")) { const pp = pick(us, s("person")!, "موظف", (x) => x.name); rows = rows.filter((t) => t.assigneeId === pp.id); }
+      if (s("person")) { const pp = pick(us, s("person")!, "موظف", (x) => x.name); rows = rows.filter((t) => people(t.id, t.assigneeId).includes(pp.id)); }
       if (a.open_only !== false) rows = rows.filter((t) => t.status !== "DONE");
-      return rows.slice(0, 60).map((t) => ({ title: t.title, project: ps.find((p) => p.id === t.projectId)?.name, person: us.find((x) => x.id === t.assigneeId)?.name, status: t.status, due: day(t.dueDate) }));
+      return rows.slice(0, 60).map((t) => ({ title: t.title, project: ps.find((p) => p.id === t.projectId)?.name, people: people(t.id, t.assigneeId).map((id) => us.find((x) => x.id === id)?.name), status: t.status, due: day(t.dueDate) }));
     }
+
   }
   return { error: "أداة غير معروفة." };
 }

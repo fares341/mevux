@@ -498,3 +498,10 @@ li.done .todo-title { text-decoration: line-through; color: var(--muted); font-w
 .todo-edit[open] { flex: 1 1 100%; }
 .todo-edit form { margin-top: 10px; }
 @media (max-width: 760px) { .todo-list li { flex-wrap: wrap; } .todo-line .todo-due { flex: 1 1 100%; } }
+/* People picker (shared tasks) */
+fieldset.people-pick { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px 14px; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+fieldset.people-pick legend { font-weight: 700; color: var(--navy); padding: 0 6px; display: flex; gap: 8px; align-items: center; font-size: 13px; }
+fieldset.people-pick .chips { margin: 0; align-items: center; }
+label.chip.pick { flex-direction: row; align-items: center; gap: 6px; cursor: pointer; font-weight: 700; font-size: 13.5px; }
+label.chip.pick input { width: auto; margin: 0; accent-color: var(--navy); }
+label.chip.pick.on { background: var(--navy); color: #fff; border-color: var(--navy); }

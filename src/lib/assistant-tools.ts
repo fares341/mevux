@@ -48,7 +48,7 @@ export function toolsFor(u: SessionUser): ToolDef[] {
   if (u.role !== "MEMBER") t.push(
     fn("follow_up", "Who is late, overdue tasks, who did not post an update today."),
     fn("person_status", "What a person is working on, progress and last updates (no money).", { person: str("person's name") }, ["person"]),
-    fn("create_task", "Create a task in a project.", { project: str("project name"), title: str("task"), assignee: str("person's name, optional"), due_date: str("YYYY-MM-DD, optional") }, ["project", "title"]),
+    fn("create_task", "Create a task in a project for one person or several people from that project's team (a shared task).", { project: str("project name"), title: str("task"), assignees: { type: "array", items: { type: "string" }, description: "names of the people (one or more) from the project team" }, assignee: str("one person's name (or use assignees)"), details: str("details, optional"), due_date: str("YYYY-MM-DD, optional") }, ["project", "title"]),
     fn("open_complaints", "Open complaints."),
   );
   if (u.role === "ADMIN") t.push(
@@ -175,9 +175,11 @@ export async function runTool(name: string, args: Record<string, unknown>, ctx: 
     }
     case "create_task": {
       const p = pick(await vis(), a("project"), "مشروع");
-      const who = a("assignee") ? pick(await W.activeUsers(), a("assignee"), "شخص") : null;
-      const t = await W.createTask(u, { projectId: p.id, title: a("title"), assigneeId: who?.id, dueDate: a("due_date") ? new Date(a("due_date")) : null });
-      return { created: t.title, project: p.name, assignee: who?.name ?? null };
+      const team = await db.selectDistinct({ id: users.id, name: users.name }).from(roleMembers).innerJoin(projectRoles, eq(roleMembers.roleId, projectRoles.id)).innerJoin(users, eq(roleMembers.userId, users.id)).where(eq(projectRoles.projectId, p.id));
+      const names = [...(Array.isArray(args.assignees) ? (args.assignees as string[]) : []), ...(a("assignee") ? [a("assignee")] : [])];
+      const who = names.map((n) => pick(team, n, "شخص في فريق المشروع"));
+      const t = await W.createTask(u, { projectId: p.id, title: a("title"), details: a("details") || undefined, assigneeIds: who.map((w) => w.id), dueDate: a("due_date") ? new Date(a("due_date")) : null });
+      return { created: t.title, project: p.name, people: who.map((w) => w.name), shared: who.length > 1 };
     }
     case "open_complaints": {
       return (await W.listComplaints(u, { open: true })).map((c) => ({ project: c.project, against: c.against, text: c.text, response: c.response, status: W.COMPLAINT_ST[c.status], ...(u.role === "ADMIN" ? { from: c.reporter } : {}) }));

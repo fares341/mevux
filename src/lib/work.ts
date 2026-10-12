@@ -1,6 +1,6 @@
 import "server-only";
 import { and, desc, eq, gte, inArray, ne, or } from "drizzle-orm";
-import { db, users, projects, projectRoles, roleMembers, tasks, updates, complaints, deductions, complaintFiles } from "./db";
+import { db, users, projects, projectRoles, roleMembers, tasks, updates, complaints, deductions, complaintFiles, taskAssignees } from "./db";
 import type { SessionUser } from "./auth";
 import { audit } from "./audit";
 import { getSettings } from "./settings";
@@ -50,21 +50,29 @@ export async function activeUsers() {
 }
 
 // ---------- tasks ----------
-export async function createTask(u: SessionUser, d: { projectId: string; title: string; details?: string; assigneeId?: string; dueDate?: Date | null; roleId?: string }) {
+export async function createTask(u: SessionUser, d: { projectId: string; title: string; details?: string; assigneeId?: string; assigneeIds?: string[]; dueDate?: Date | null; roleId?: string }) {
   if (!isLead(u)) throw new Error("إنشاء المهام للمدير والتيم ليد بس.");
   if (!(await canSeeProject(u, d.projectId))) throw new Error("المشروع غير موجود.");
-  if (d.assigneeId && !(await membersOf(d.projectId)).some((x) => x.id === d.assigneeId)) throw new Error("الشخص ده مش في المشروع.");
+  // One or several people, all from this project's team.
+  const ids = [...new Set([...(d.assigneeIds ?? []), ...(d.assigneeId ? [d.assigneeId] : [])].filter(Boolean))].slice(0, 20);
+  const team = await membersOf(d.projectId);
+  const bad = ids.filter((id) => !team.some((m) => m.id === id));
+  if (bad.length) throw new Error("فيه شخص مختار مش في فريق المشروع ده.");
   if (d.roleId) { const r = await db.query.projectRoles.findFirst({ where: and(eq(projectRoles.id, d.roleId), eq(projectRoles.projectId, d.projectId)) }); if (!r) d.roleId = undefined; }
-  const [t] = await db.insert(tasks).values({ projectId: d.projectId, title: d.title.slice(0, 200), details: d.details?.slice(0, 4000), assigneeId: d.assigneeId || null, dueDate: d.dueDate ?? null, roleId: d.roleId || null, createdBy: u.id }).returning();
-  await audit(u.id, "task_create", t.title);
-  return t;
+  const [t] = await db.insert(tasks).values({ projectId: d.projectId, title: d.title.slice(0, 200), details: d.details?.slice(0, 4000), assigneeId: ids[0] ?? null, dueDate: d.dueDate ?? null, roleId: d.roleId || null, createdBy: u.id }).returning();
+  if (ids.length) await db.insert(taskAssignees).values(ids.map((userId) => ({ taskId: t.id, userId })));
+  await audit(u.id, "task_create", `${t.title} → ${ids.length} people`);
+  return { ...t, assigneeIds: ids };
+}
+async function isAssignee(taskId: string, userId: string) {
+  return !!(await db.query.taskAssignees.findFirst({ where: and(eq(taskAssignees.taskId, taskId), eq(taskAssignees.userId, userId)) }));
 }
 
 export async function setTaskStatus(u: SessionUser, taskId: string, status: TaskSt) {
   const t = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
   if (!t) throw new Error("المهمة غير موجودة.");
   if (!(await canSeeProject(u, t.projectId))) throw new Error("المهمة غير موجودة.");
-  if (!isLead(u) && t.assigneeId !== u.id) throw new Error("دي مش مهمتك.");
+  if (!isLead(u) && t.assigneeId !== u.id && !(await isAssignee(t.id, u.id))) throw new Error("دي مش مهمتك.");
   await db.update(tasks).set({ status, doneAt: status === "DONE" ? new Date() : null }).where(eq(tasks.id, taskId));
   await audit(u.id, "task_status", `${t.title} → ${status}`);
   return { ...t, status };
@@ -74,11 +82,19 @@ export async function listTasks(u: SessionUser, opts: { mine?: boolean; projectI
   const vis = (await visibleProjects(u)).map((p) => p.id);
   if (!vis.length) return [];
   const conds = [inArray(tasks.projectId, opts.projectId ? vis.filter((x) => x === opts.projectId) : vis)];
-  if (opts.mine) conds.push(eq(tasks.assigneeId, u.id));
-  const rows = await db.select({ t: tasks, project: projects.name, assignee: users.name }).from(tasks)
-    .innerJoin(projects, eq(tasks.projectId, projects.id)).leftJoin(users, eq(tasks.assigneeId, users.id))
+  if (opts.mine) {
+    const shared = (await db.select({ id: taskAssignees.taskId }).from(taskAssignees).where(eq(taskAssignees.userId, u.id))).map((x) => x.id);
+    conds.push(shared.length ? or(eq(tasks.assigneeId, u.id), inArray(tasks.id, shared))! : eq(tasks.assigneeId, u.id));
+  }
+  const rows = await db.select({ t: tasks, project: projects.name }).from(tasks)
+    .innerJoin(projects, eq(tasks.projectId, projects.id))
     .where(and(...conds)).orderBy(desc(tasks.createdAt));
-  return rows.filter((r) => !opts.open || r.t.status !== "DONE").map((r) => ({ ...r.t, project: r.project, assignee: r.assignee }));
+  const ids = rows.map((r) => r.t.id);
+  const people = ids.length ? await db.select({ taskId: taskAssignees.taskId, id: users.id, name: users.name }).from(taskAssignees).innerJoin(users, eq(taskAssignees.userId, users.id)).where(inArray(taskAssignees.taskId, ids)) : [];
+  return rows.filter((r) => !opts.open || r.t.status !== "DONE").map((r) => {
+    const who = people.filter((p) => p.taskId === r.t.id);
+    return { ...r.t, project: r.project, assignees: who.map((p) => ({ id: p.id, name: p.name })), assignee: who.map((p) => p.name).join("، ") || null, mineToo: who.some((p) => p.id === u.id) || r.t.assigneeId === u.id };
+  });
 }
 
 // ---------- daily updates ----------
@@ -130,7 +146,7 @@ export async function personStatus(u: SessionUser, personId: string) {
   const roles = await db.select({ title: projectRoles.title, progress: projectRoles.progress, dueDate: projectRoles.dueDate, deliveredAt: projectRoles.deliveredAt, project: projects.name, status: projects.status })
     .from(roleMembers).innerJoin(projectRoles, eq(roleMembers.roleId, projectRoles.id)).innerJoin(projects, eq(projectRoles.projectId, projects.id))
     .where(and(eq(roleMembers.userId, personId), inArray(projects.status, u.role === "ADMIN" ? [...ACTIVE_ST] : [...LEAD_SCOPE])));
-  const t = (await listTasks(u, { open: true })).filter((x) => x.assigneeId === personId);
+  const t = (await listTasks(u, { open: true })).filter((x) => x.assigneeId === personId || x.assignees.some((a) => a.id === personId));
   const last = await feed(u, { userId: personId, limit: 5 });
   return { name: p.name, roles, tasks: t, lastUpdates: last };
 }

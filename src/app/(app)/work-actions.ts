@@ -13,7 +13,7 @@ const s = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 
 export async function createTaskAction(_: R, fd: FormData) {
   const u = await requireUser();
-  return run(() => W.createTask(u, { projectId: s(fd, "projectId"), title: s(fd, "title"), details: s(fd, "details") || undefined, assigneeId: s(fd, "assigneeId") || undefined, dueDate: s(fd, "dueDate") ? new Date(s(fd, "dueDate")) : null }), "تمت إضافة المهمة.", ["/tasks", "/follow"]);
+  return run(() => W.createTask(u, { projectId: s(fd, "projectId"), title: s(fd, "title"), details: s(fd, "details") || undefined, assigneeIds: fd.getAll("assigneeIds").map(String).filter(Boolean), assigneeId: s(fd, "assigneeId") || undefined, dueDate: s(fd, "dueDate") ? new Date(s(fd, "dueDate")) : null }), "تمت إضافة المهمة.", ["/tasks", "/follow"]);
 }
 export async function taskStatusAction(fd: FormData) {
   const u = await requireUser();
