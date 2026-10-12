@@ -7,7 +7,27 @@ export function Msg({ s }: { s: R }) {
 }
 const d = (x?: Date | string | null) => (x ? new Date(x).toISOString().slice(0, 10) : "");
 
-export function NewProject({ clients = [], clientId }: { clients?: { id: string; name: string }[]; clientId?: string }) {
+import { RULE_KEYS, RULE_LABEL, type ProjectRules } from "@/lib/project-rules";
+
+/** This project's deduction rules. Pre-filled with Settings (new project) or the project's current rules. */
+export function RulesFields({ k, r, note, isNew }: { k: string; r: ProjectRules; note?: string | null; isNew?: boolean }) {
+  return (<fieldset className="rules-box">
+    <legend>قواعد الخصم في المشروع ده</legend>
+    <p className="sub">{isNew ? "متعبّية من الإعدادات. غيّر اللي محتاجه للمشروع ده بس، ومش هيأثر على باقي المشاريع." : "التعديل هنا بيأثر على المشروع ده بس."} الفريق بيشوف القواعد دي في أمر الشغل.</p>
+    <div className="row">
+      {RULE_KEYS.map((key) => <label key={key}>{RULE_LABEL[key].label} ({RULE_LABEL[key].unit})
+        {RULE_LABEL[key].hint && <small>{RULE_LABEL[key].hint}</small>}
+        <input id={`${k}-r-${key}`} name={"r_" + key} type="number" min="0" max={RULE_LABEL[key].max} step={key === "graceHours" ? 1 : 0.5} dir="ltr" defaultValue={r[key]} required /></label>)}
+    </div>
+    <div className="actions" style={{ gap: 20 }}>
+      <label className="chk"><input type="checkbox" name="r_banOnLoss" defaultChecked={r.banOnLoss} /> خسارة عميل = حرمان من المشروع اللي بعده</label>
+      <label className="chk"><input type="checkbox" name="r_banOnRefuse" defaultChecked={r.banOnRefuse} /> رفض العميل الإعادة = حرمان من المشروع اللي بعده</label>
+    </div>
+    <label>قواعد إضافية للمشروع (اختياري)<small>أي شرط خاص بالمشروع ده، والفريق بيشوفه في أمر الشغل</small><textarea id={`${k}-rulesNote`} name="rulesNote" rows={2} defaultValue={note ?? ""} placeholder="مثلاً: أي تعديل من العميل بعد التسليم بيتحسب رجوع شغل لو كان في المطلوب الأصلي" /></label>
+  </fieldset>);
+}
+
+export function NewProject({ clients = [], clientId, ruleDefaults }: { clients?: { id: string; name: string }[]; clientId?: string; ruleDefaults: ProjectRules }) {
   const [s, a, p] = useActionState(createProject, {});
   const [cid, setCid] = useState(clientId || "");
   return (<form action={a}><Msg s={s} />
@@ -27,12 +47,13 @@ export function NewProject({ clients = [], clientId }: { clients?: { id: string;
     <BillingFields k="np" d={{}} />
     <Kinds k="np" />
     <label style={{ marginBottom: 14 }}>وصف المشروع<textarea id="np-desc" name="description" /></label>
+    <RulesFields k="np" r={ruleDefaults} isNew />
     <button disabled={p}>إنشاء المشروع</button>
   </form>);
 }
 
 type P = { clientId?: string | null; kinds?: string | null; nextDueDate?: Date | null; reminderDays?: number; billing?: string; monthlyFee?: number | null; freeMessages?: number | null; id: string; name: string; client: string; price: number; rate: number; size: string; status: string; startDate: Date | null; dueDate: Date | null; description: string | null; currency: string };
-export function EditProject({ p, clients = [] }: { p: P; clients?: { id: string; name: string }[] }) {
+export function EditProject({ p, clients = [], rules, rulesNote }: { p: P; clients?: { id: string; name: string }[]; rules: ProjectRules; rulesNote?: string | null }) {
   const [s, a, pend] = useActionState(updateProject, {});
   return (<form action={a}><Msg s={s} /><input type="hidden" name="id" value={p.id} />
     <div className="row">
@@ -52,6 +73,7 @@ export function EditProject({ p, clients = [] }: { p: P; clients?: { id: string;
     <BillingFields k="ep" d={{ billing: p.billing, monthlyFee: p.monthlyFee, freeMessages: p.freeMessages, nextDueDate: p.nextDueDate, reminderDays: p.reminderDays }} />
     <Kinds k="ep" v={p.kinds} />
     <label style={{ marginBottom: 14 }}>وصف المشروع<textarea id="ep-desc" name="description" defaultValue={p.description || ""} /></label>
+    <RulesFields k="ep" r={rules} note={rulesNote} />
     <p className="sub" style={{ marginTop: 0 }}>اختيار <b>مقفول ومدفوع</b> يعني إن العميل استلم ووافق ودفع، وساعتها مستحقات الفريق تتحسب ويبقى ينفع تصرفها.</p>
     <button disabled={pend}>حفظ</button>
   </form>);

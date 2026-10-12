@@ -43,7 +43,7 @@ export const ADMIN_TOOLS: ToolDef[] = [
   fn("list_ideas", "List saved ideas.", { status: E(["OPEN", ...Object.keys(IDEA_STATUS)], "OPEN = new/planned/doing (default)") }),
   fn("set_idea_status", "Change an idea's status.", { idea: S("idea title"), status: E(Object.keys(IDEA_STATUS), "new status") }, ["idea", "status"]),
   fn("update_client_stage", "Move a client to a stage and/or write a custom status, log what happened, set the next step.", { client: S("client name"), stage: E(STAGE_KEYS, "fixed stage"), custom_status: S("owner's own status wording, optional"), note: S("what happened"), next_step: S("next step"), next_date: S("YYYY-MM-DD") }, ["client"]),
-  fn("create_project", "Create a project, optionally for an existing client.", { name: S("project name"), client: S("client name (existing client or free text)"), price: N("implementation / setup price"), currency: CUR, billing: E(["ONE_TIME", "SUBSCRIPTION"], "contract type"), monthly_fee: N("monthly subscription if SUBSCRIPTION"), free_messages: N("free WhatsApp messages per month, default 1000"), status: E(["MEETING", "BRIEF", "APPROVED", "IN_PROGRESS", "DELIVERED", "CLOSED"], "stage"), start_date: S("YYYY-MM-DD"), due_date: S("YYYY-MM-DD"), size: E(["SMALL", "MEDIUM", "LARGE"], "size"), description: S("description") }, ["name", "client", "price", "currency"]),
+  fn("create_project", "Create a project, optionally for an existing client.", { name: S("project name"), client: S("client name (existing client or free text)"), price: N("implementation / setup price"), currency: CUR, billing: E(["ONE_TIME", "SUBSCRIPTION"], "contract type"), monthly_fee: N("monthly subscription if SUBSCRIPTION"), free_messages: N("free WhatsApp messages per month, default 1000"), status: E(["MEETING", "BRIEF", "APPROVED", "IN_PROGRESS", "DELIVERED", "CLOSED"], "stage"), start_date: S("YYYY-MM-DD"), due_date: S("YYYY-MM-DD"), size: E(["SMALL", "MEDIUM", "LARGE"], "size"), description: S("description"), late_pct_per_day: N("deduction rule: lateness % per day (only if the owner says)"), late_max_pct: N("max lateness %"), grace_hours: N("grace hours after deadline"), rework_pct: N("rework deduction %"), no_reply_pct: N("no-reply deduction %"), client_loss_pct: N("client loss %"), client_refuse_pct: N("client refuses redo %"), rules_note: S("extra rules for this project, shown to the team") }, ["name", "client", "price", "currency"]),
   fn("set_project_status", "Change a project's stage (e.g. CLOSED when the client accepted and paid).", { project: S("project name"), status: E(Object.keys(STATUS), "new status") }, ["project", "status"]),
   fn("add_role", "Add a role to a project with its fee and people. If two people share it give their shares.", { project: S("project name"), title: S("role title"), fee: N("role fee in EGP"), people: { type: "array", items: { type: "string" }, description: "names of the people in the role" }, shares: { type: "array", items: { type: "number" }, description: "percent for each person, same order, sum 100; omit for equal split" }, due_date: S("YYYY-MM-DD"), scope: S("what is required"), deliverables: S("deliverables") }, ["project", "title", "fee", "people"]),
   fn("record_payment", "Record a client payment on a project (in the project currency).", { project: S("project name"), amount: N("amount"), note: S("note") }, ["project", "amount"]),
@@ -72,6 +72,7 @@ export const ADMIN_TOOLS: ToolDef[] = [
     next_due_date: S("next subscription payment date YYYY-MM-DD"), reminder_days: N("days before the due date to alert"),
     kinds: { type: "array", items: { type: "string", enum: ["AUTOMATION", "CHATBOT", "WEBSITE", "APP", "SAAS", "DASHBOARD"] }, description: "work types" },
     price: N("price"), start_date: S("YYYY-MM-DD"), due_date: S("YYYY-MM-DD"), status: E(Object.keys(STATUS), "status"), description: S("description"),
+    late_pct_per_day: N("deduction rule: lateness % per day (only if the owner says)"), late_max_pct: N("max lateness %"), grace_hours: N("grace hours after deadline"), rework_pct: N("rework deduction %"), no_reply_pct: N("no-reply deduction %"), client_loss_pct: N("client loss %"), client_refuse_pct: N("client refuses redo %"), rules_note: S("extra rules for this project, shown to the team"),
   }, ["project"]),
   fn("add_project_asset", "Add a website, app, SaaS, server or domain to a project with its details and cost. Shows in the project, the client's file and the brief.", {
     project: S("project name"), kind: E(["WEBSITE", "APP", "SAAS", "SERVER", "DOMAIN", "OTHER"], "type"), name: S("name"), url: S("url / domain"), provider: S("provider / tech"), details: S("details: pages, features, specs"),
@@ -93,6 +94,16 @@ function pick<T extends { name: string }>(list: T[], q: string, what: string): T
 }
 const fd = (o: Record<string, unknown>) => { const f = new FormData(); for (const [k, v] of Object.entries(o)) { if (v === undefined || v === null || v === "") continue; if (Array.isArray(v)) v.forEach((x) => f.append(k, String(x))); else f.append(k, String(v)); } return f; };
 const done = (r: { ok?: string; error?: string }) => { if (r.error) throw new Error(r.error); return r.ok ?? "تم"; };
+const RULE_ARGS: Record<string, string> = { late_pct_per_day: "latePctPerDay", late_max_pct: "lateMaxPct", grace_hours: "graceHours", rework_pct: "reworkPct", no_reply_pct: "noReplyPct", client_loss_pct: "clientLossPct", client_refuse_pct: "clientRefusePct" };
+/** Merge any rule numbers the owner gave into this project's rules JSON (null = nothing given). */
+async function rulesJson(a: Record<string, unknown>, current: string | null | undefined): Promise<string | null> {
+  const given = Object.keys(RULE_ARGS).filter((k) => typeof a[k] === "number");
+  if (!given.length) return current ?? null;
+  const { rulesFor } = await import("./project-rules");
+  const r = rulesFor(current, await getSettings()) as unknown as Record<string, number | boolean>;
+  for (const k of given) { const v = a[k] as number; if (v < 0 || v > (k === "grace_hours" ? 168 : 100)) throw new Error(`القيمة ${k} غير صحيحة.`); r[RULE_ARGS[k]] = v; }
+  return JSON.stringify(r);
+}
 const allClients = () => db.select().from(clients).orderBy(asc(clients.name));
 const allProjects = () => db.select().from(projects).orderBy(desc(projects.createdAt));
 const team = () => db.select({ id: users.id, name: users.name, active: users.active }).from(users);
@@ -231,6 +242,7 @@ export async function runAdminTool(name: string, a: Record<string, unknown>, u: 
         billing, monthlyFee: n("monthly_fee") ?? null, freeMessages: n("free_messages") ?? 1000,
         fundPct: Number(st.fundPct), ownerPct: Number(st.ownerPct), teamCapPct: Number(st.teamCapPct),
         startDate: s("start_date") ? new Date(s("start_date")!) : null, dueDate: s("due_date") ? new Date(s("due_date")!) : null, description: s("description"),
+        dedRules: await rulesJson(a, null), rulesNote: s("rules_note") ?? null,
       }).returning();
       await db.update(bans).set({ consumedByProject: p.id }).where(isNull(bans.consumedByProject));
       if (cl && !["ACTIVE", "DONE"].includes(cl.stage) && ["APPROVED", "IN_PROGRESS"].includes(p.status)) {
@@ -364,6 +376,8 @@ export async function runAdminTool(name: string, a: Record<string, unknown>, u: 
       if (s("due_date")) set.dueDate = new Date(s("due_date")!);
       if (s("status")) { set.status = s("status") as typeof p.status; set.closedAt = set.status === "CLOSED" ? (p.closedAt ?? new Date()) : null; }
       if (s("description")) set.description = s("description");
+      if (Object.keys(RULE_ARGS).some((k) => typeof a[k] === "number")) set.dedRules = await rulesJson(a, p.dedRules);
+      if (s("rules_note") !== undefined) set.rulesNote = s("rules_note") || null;
       if (!Object.keys(set).length) throw new Error("مفيش حاجة اتطلب تتغير.");
       await db.update(projects).set(set).where(eq(projects.id, p.id));
       revalidatePath(`/projects/${p.id}`); revalidatePath("/projects"); revalidatePath("/finance"); revalidatePath("/clients"); revalidatePath("/");

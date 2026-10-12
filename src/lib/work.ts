@@ -5,6 +5,7 @@ import type { SessionUser } from "./auth";
 import { audit } from "./audit";
 import { getSettings } from "./settings";
 import { lateDaysFor } from "./finance";
+import { rulesFor } from "./project-rules";
 
 // Every function here takes the signed-in user and enforces permissions itself,
 // so the web pages and the assistant share exactly the same rules.
@@ -195,7 +196,9 @@ export async function decideComplaint(u: SessionUser, id: string, decision: "RES
   if (!role) throw new Error("الشخص مالوش دور في المشروع.");
   const type = dedType ?? "REWORK";
   const s = await getSettings();
-  const [d] = await db.insert(deductions).values({ roleId: role.id, userId: c.againstId, type, pct: Number(s[DED_KEY[type]]), banNext: type === "CLIENT_LOSS" || type === "CLIENT_REFUSE", reason: c.text, evidence: [c.evidence, c.response && `رد الموظف: ${c.response}`].filter(Boolean).join("\n") || null, createdBy: u.id }).returning();
+  const proj = await db.query.projects.findFirst({ where: eq(projects.id, c.projectId) });
+  const pr = rulesFor(proj?.dedRules, s);
+  const [d] = await db.insert(deductions).values({ roleId: role.id, userId: c.againstId, type, pct: pr[DED_KEY[type]], banNext: (type === "CLIENT_LOSS" && pr.banOnLoss) || (type === "CLIENT_REFUSE" && pr.banOnRefuse), reason: c.text, evidence: [c.evidence, c.response && `رد الموظف: ${c.response}`].filter(Boolean).join("\n") || null, createdBy: u.id }).returning();
   await db.update(complaints).set({ status: "DEDUCTED", decisionNote: note, deductionId: d.id }).where(eq(complaints.id, id));
   await audit(u.id, "complaint_deduct", id);
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import { eq, inArray, desc } from "drizzle-orm";
 import { db, projects, projectPayments, projectCosts, projectRoles, roleMembers, deductions } from "./db";
+import { rulesFor } from "./project-rules";
 import { getSettings } from "./settings";
 import { computeProject, type ProjectIn, type Rules } from "./finance";
 
@@ -45,7 +46,9 @@ export async function loadProjects(ids?: string[]) {
 
 export type Loaded = Awaited<ReturnType<typeof loadProjects>>[number];
 export function calc(p: Loaded, r: Rules) {
-  return computeProject(p as unknown as ProjectIn, r);
+  // Each project's own deduction rules override the global ones.
+  const pr = rulesFor((p as { dedRules?: string | null }).dedRules, r as unknown as Record<string, unknown>);
+  return computeProject(p as unknown as ProjectIn, { ...r, latePctPerDay: pr.latePctPerDay, lateMaxPct: pr.lateMaxPct });
 }
 
 export async function loadProject(id: string) {
@@ -57,7 +60,7 @@ export async function loadProject(id: string) {
 // SAFE view for team members: selects only non-financial columns. Never add price/fee here.
 export async function loadTeamView(onlyActive = true) {
   const { users } = await import("./db");
-  const ps = await db.select({ id: projects.id, name: projects.name, client: projects.client, status: projects.status, startDate: projects.startDate, dueDate: projects.dueDate, description: projects.description })
+  const ps = await db.select({ id: projects.id, name: projects.name, client: projects.client, status: projects.status, startDate: projects.startDate, dueDate: projects.dueDate, description: projects.description, dedRules: projects.dedRules, rulesNote: projects.rulesNote })
     .from(projects).orderBy(desc(projects.createdAt));
   const list = onlyActive ? ps.filter((p) => (ACTIVE as readonly string[]).includes(p.status)) : ps;
   if (!list.length) return [];

@@ -90,6 +90,8 @@ export const projects = pgTable("projects", {
   dueDate: timestamp("due_date", { withTimezone: true }),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   description: text("description"),
+  dedRules: text("ded_rules"), // JSON: this project's own deduction rules (overrides Settings); null = use Settings
+  rulesNote: text("rules_note"), // extra rules written by the owner, shown to the project team
   createdAt: created(),
 });
 

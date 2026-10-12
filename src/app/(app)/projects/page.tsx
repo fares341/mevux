@@ -6,6 +6,8 @@ import { loadProjects, loadTeamView, calc, rules, STATUS, SIZE } from "@/lib/pro
 import { egp } from "@/lib/finance";
 import { NewProject } from "./forms";
 import { visibleProjectIds } from "@/lib/work";
+import { defaultsFrom } from "@/lib/project-rules";
+import { getSettings } from "@/lib/settings";
 
 const pill = (s: string) => ({ CLOSED: "ok", CANCELLED: "bad", DELIVERED: "info", IN_PROGRESS: "warn", APPROVED: "warn" } as Record<string, string>)[s] || "info";
 const fmt = (d: Date | null) => (d ? d.toLocaleDateString("ar-EG", { day: "numeric", month: "short" }) : "—");
@@ -60,7 +62,7 @@ export default async function Projects({ searchParams }: { searchParams: Promise
     <div className="head"><div><span className="tag">العمل</span><h1>المشاريع</h1><p className="sub">الأرقام بالجنيه.</p></div></div>
     {sp.deleted && <div className="msg ok">اتمسح مشروع «{sp.deleted}».</div>}
     <Tabs tab={tab} admin counts={counts} />
-    {tab === "new" && <div className="card"><h2>مشروع جديد</h2><NewProject clients={await db.select({ id: clients.id, name: clients.name }).from(clients).orderBy(asc(clients.name))} clientId={sp.client} /></div>}
+    {tab === "new" && <div className="card"><h2>مشروع جديد</h2><NewProject ruleDefaults={defaultsFrom(await getSettings())} clients={await db.select({ id: clients.id, name: clients.name }).from(clients).orderBy(asc(clients.name))} clientId={sp.client} /></div>}
     {tab !== "new" && !ps.length && <div className="note">مفيش مشاريع في "{g.label}". {g.hint && `(${g.hint})`}</div>}
     {ps.length > 0 && <div className="card plain table-wrap"><table>
       <thead><tr><th>المشروع</th><th>العميل</th><th>المرحلة</th><th>الحجم</th><th>السعر</th><th>المدفوع</th><th>أجور الفريق</th><th>الصافي</th><th>نصيبك</th></tr></thead>

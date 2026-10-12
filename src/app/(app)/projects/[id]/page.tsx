@@ -12,6 +12,7 @@ import { RoleNotes, loadRoleNotes } from "../role-notes";
 import { WorkOrderMember, WorkOrderAdmin } from "../work-order";
 import { lateDaysFor } from "@/lib/finance";
 import { getSettings } from "@/lib/settings";
+import { rulesFor } from "@/lib/project-rules";
 import { EditProject, PaymentForm, CostForm, RoleForm, DeductionForm, DeleteProject } from "../forms";
 import { RoleUpload } from "../files-ui";
 import { ProjectAssets } from "../assets";
@@ -48,7 +49,9 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
     // The person's OWN fee share per role (never anyone else's), for the deduction table in EGP.
     const myShares = await db.select({ roleId: roleMembers.roleId, sharePct: roleMembers.sharePct, fee: projectRoles.fee }).from(roleMembers)
       .innerJoin(projectRoles, eq(roleMembers.roleId, projectRoles.id)).where(and(eq(roleMembers.userId, me.id), eq(projectRoles.projectId, p.id)));
-    const rr = await rules();
+    // Deduction rules of THIS project (percentages only, no money) for the work order card.
+    const pr = rulesFor(p.dedRules, await getSettings());
+    const rr = { ...(await rules()), latePctPerDay: pr.latePctPerDay, lateMaxPct: pr.lateMaxPct };
     return (<>
       <PageHead title={p.name} crumbs={[{ href: "/projects", label: "المشاريع" }]} badge={<span className="pill info">{STATUS[p.status]}</span>}
         help={<>{p.client} · التسليم {fmt(p.dueDate)}. حدّث تقدمك وارفع ملفك من كارت دورك.</>} actions={mine ? [{ href: `/chats/${p.id}`, label: "شات المشروع", icon: "chat" }] : undefined} />
@@ -61,7 +64,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
           {!(own && r.issuedAt) && r.deliverables && <p style={{ whiteSpace: "pre-wrap" }}><b>المخرجات: </b>{r.deliverables}</p>}
           <div className="actions"><b>التقدم:</b> <Progress roleId={r.id} value={r.progress} canEdit={own} /></div>
           {mine && <div style={{ marginTop: 12 }}><b style={{ color: "var(--navy)" }}>ملفات الدور</b><FileList files={files.filter((f) => f.roleId === r.id)} me={me} /></div>}
-          {own && (() => { const sh = myShares.find((x) => x.roleId === r.id); return <WorkOrderMember role={r} base={sh ? sh.fee * sh.sharePct / 100 : 0} rules={rr} days={lateDaysFor(r)} />; })()}
+          {own && (() => { const sh = myShares.find((x) => x.roleId === r.id); return <WorkOrderMember role={r} base={sh ? sh.fee * sh.sharePct / 100 : 0} rules={rr} days={lateDaysFor(r)} projectRules={pr} rulesNote={p.rulesNote} />; })()}
           {own && <RoleNotes notes={notes} roleId={r.id} admin={false} />}
           {own && <details style={{ marginTop: 10 }} open={!r.deliveredAt}><summary>ارفع ملف شغلك</summary><div style={{ marginTop: 10 }}><RoleUpload roleId={r.id} delivered={!!r.deliveredAt || !!r.issuedAt} /></div></details>}
         </section>); })}
@@ -85,6 +88,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
   const allClients = await db.select({ id: clients.id, name: clients.name }).from(clients).orderBy(asc(clients.name));
   const briefs = await db.select().from(projectBriefs).where(eq(projectBriefs.projectId, p.id)).orderBy(desc(projectBriefs.createdAt));
   const c = calc(p, r);
+  const pr = rulesFor(p.dedRules, st);
   const name = (uid: string) => team.find((u) => u.id === uid)?.name || "—";
   const userOpts = team.filter((u) => u.active).map((u) => ({ id: u.id, name: u.name, banned: openBans.some((b) => b.userId === u.id) }));
   const allDeds = p.roles.flatMap((ro) => ro.deductions.map((dd) => ({ ...dd, role: ro.title })));
@@ -139,7 +143,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
               <input aria-label="تاريخ التسليم" id={"dl-" + ro.id} name="deliveredAt" type="date" defaultValue={ro.deliveredAt ? ro.deliveredAt.toISOString().slice(0, 10) : ""} style={{ maxWidth: 160 }} /><button className="sm ghost">{ro.deliveredAt ? "تعديل تاريخ التسليم" : "تسجيل التسليم"}</button></form>
             <Progress roleId={ro.id} value={ro.progress} canEdit />
           </div>
-          <WorkOrderAdmin role={ro} rules={r} reworkPct={r.reworkPct} defaultGrace={Number(st.graceHours) || 0} people={ro.members.map((m) => name(m.userId)).join(" و")} />
+          <WorkOrderAdmin role={ro} rules={r} reworkPct={pr.reworkPct} defaultGrace={pr.graceHours} people={ro.members.map((m) => name(m.userId)).join(" و")} />
           <RoleNotes notes={notes} roleId={ro.id} admin />
           <div style={{ marginTop: 10 }}><b style={{ color: "var(--navy)" }}>ملفات الدور</b><FileList files={files.filter((f) => f.roleId === ro.id)} me={me} /></div>
           <details style={{ marginTop: 10 }}><summary>تعديل ملف الدور</summary><div style={{ marginTop: 12 }}>
@@ -161,7 +165,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
             <form action={decideDeduction}><input type="hidden" name="id" value={dd.id} /><input type="hidden" name="status" value="APPROVED" /><button className="sm danger">اعتماد</button></form>
             <form action={decideDeduction}><input type="hidden" name="id" value={dd.id} /><input type="hidden" name="status" value="REJECTED" /><button className="sm ghost">رفض</button></form></div>
             : dd.status === "APPROVED" ? <span className="pill bad">معتمد</span> : <span className="pill ok">مرفوض</span>}</td></tr>)}</tbody></table></div>}
-      {p.roles.length ? <details><summary>تسجيل خصم</summary><div style={{ marginTop: 12 }}><DeductionForm projectId={p.id} rates={r} roles={p.roles.map((ro) => ({ id: ro.id, title: ro.title, members: ro.members.map((m) => ({ userId: m.userId, name: name(m.userId) })) }))} /></div></details> : <p className="sub">أضف الأدوار الأول.</p>}
+      {p.roles.length ? <details><summary>تسجيل خصم</summary><div style={{ marginTop: 12 }}><DeductionForm projectId={p.id} rates={{ ...r, latePctPerDay: pr.latePctPerDay, lateMaxPct: pr.lateMaxPct, reworkPct: pr.reworkPct, noReplyPct: pr.noReplyPct, clientLossPct: pr.clientLossPct, clientRefusePct: pr.clientRefusePct }} roles={p.roles.map((ro) => ({ id: ro.id, title: ro.title, members: ro.members.map((m) => ({ userId: m.userId, name: name(m.userId) })) }))} /></div></details> : <p className="sub">أضف الأدوار الأول.</p>}
     </section>
 
     </>}
@@ -218,7 +222,7 @@ export default async function ProjectPage({ params, searchParams }: { params: Pr
 
     </>}
     {tab === "details" && <>
-    <section className="card"><details open><summary>بيانات المشروع ومرحلته</summary><div style={{ marginTop: 12 }}><EditProject p={p} clients={allClients} /></div></details></section>
+    <section className="card"><details open><summary>بيانات المشروع ومرحلته</summary><div style={{ marginTop: 12 }}><EditProject rules={pr} rulesNote={p.rulesNote} p={p} clients={allClients} /></div></details></section>
     <section className="card danger-zone" id="delete"><h2>حذف المشروع</h2><DeleteProject id={p.id} name={p.name} /></section>
     </>}
   </>);

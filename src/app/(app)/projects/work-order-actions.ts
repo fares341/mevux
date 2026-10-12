@@ -8,6 +8,8 @@ import { audit } from "@/lib/audit";
 import { getSettings } from "@/lib/settings";
 import { cairoToDate, fmtCairo } from "@/lib/tz";
 import { cutoff } from "@/lib/finance";
+import { rulesFor } from "@/lib/project-rules";
+import { projects } from "@/lib/db";
 import { checkFile, saveFile } from "@/lib/storage";
 
 type R = { ok?: string; error?: string };
@@ -26,7 +28,9 @@ export async function issueWorkOrder(_: R, fd: FormData): Promise<R> {
   const done = v(fd, "doneDefinition").slice(0, 2000);
   const deadline = cairoToDate(v(fd, "deadline"));
   const st = await getSettings();
-  const grace = Math.max(0, Math.min(168, Math.round(Number(v(fd, "graceHours") || st.graceHours) || 0)));
+  const proj = await db.query.projects.findFirst({ where: eq(projects.id, role.projectId) });
+  const pr = rulesFor(proj?.dedRules, st);
+  const grace = Math.max(0, Math.min(168, Math.round(Number(v(fd, "graceHours") === "" ? pr.graceHours : v(fd, "graceHours")) || 0)));
   if (scope.length < 10) return { error: "اكتب المطلوب بالتفصيل (التيكت)." };
   if (!checklist.length) return { error: "اكتب قائمة التسليمات: حاجة في كل سطر." };
   if (!done) return { error: "اكتب إمتى الشغل يعتبر خلص." };
@@ -160,10 +164,11 @@ export async function reviewWork(_: R, fd: FormData): Promise<R> {
   const note = v(fd, "note"), due = cairoToDate(v(fd, "reworkDue"));
   if (note.length < 5) return { error: "اكتب المطلوب تعديله." };
   if (!due || due < new Date()) return { error: "حدد معاد للتعديل بعد دلوقتي." };
-  const st = await getSettings();
+  const proj = await db.query.projects.findFirst({ where: eq(projects.id, role.projectId) });
+  const st = { reworkPct: rulesFor(proj?.dedRules, await getSettings()).reworkPct };
   const people = await db.select({ userId: roleMembers.userId }).from(roleMembers).where(eq(roleMembers.roleId, role.id));
   if (v(fd, "deduct") !== "0") for (const p of people)
-    await db.insert(deductions).values({ roleId: role.id, userId: p.userId, type: "REWORK", pct: Number(st.reworkPct), reason: "رجوع شغل: " + note, createdBy: admin.id });
+    await db.insert(deductions).values({ roleId: role.id, userId: p.userId, type: "REWORK", pct: st.reworkPct, reason: "رجوع شغل: " + note, createdBy: admin.id });
   await db.update(projectRoles).set({ reviewStatus: "REWORK", reviewNote: note, reworkDueAt: due, progress: 80 }).where(eq(projectRoles.id, role.id));
   await db.insert(roleNotes).values({ roleId: role.id, authorId: admin.id, text: `🔁 محتاج تعديل (لحد ${fmtCairo(due)}): ${note}` });
   await say(role.projectId, admin.id, `🔁 «${role.title}» محتاج تعديل لحد ${fmtCairo(due)}: ${note}`);

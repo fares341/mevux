@@ -50,6 +50,13 @@
       "when": 1791756425928,
       "tag": "0006_work_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791786795853,
+      "tag": "0007_project_rules",
+      "breakpoints": true
     }
   ]
 }

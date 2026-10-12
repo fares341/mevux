@@ -1,6 +1,7 @@
 import { woState, WO_LABEL, WO_PILL, cutoff } from "@/lib/work-order";
 import { deductionSchedule, type Rules } from "@/lib/finance";
 import { fmtCairo, dateToCairoInput } from "@/lib/tz";
+import type { ProjectRules } from "@/lib/project-rules";
 import { toggleChecklist, decideExtension } from "./work-order-actions";
 import { Countdown, AcceptBox, WorkActions, IssueForm, ReviewForm } from "./work-order-forms";
 
@@ -36,7 +37,22 @@ function Checklist({ role, canTick }: { role: WORole; canTick: boolean }) {
 }
 
 /** What the person holding the role sees. `base` = their own fee share (only their own money). */
-export function WorkOrderMember({ role, base, rules, days }: { role: WORole; base: number; rules: Rules; days: number }) {
+/** The project's deduction rules as the team sees them (percentages and EGP of their own fee only). */
+function RulesBox({ r, base, note }: { r: ProjectRules; base: number; note?: string | null }) {
+  const egpOf = (pct: number) => base ? ` = ${egp(base * pct / 100)} ج` : "";
+  return (<details className="wo-rules"><summary>قواعد الخصم في المشروع ده</summary>
+    <ul>
+      <li>التأخير: {r.latePctPerDay}% عن كل يوم بعد المعاد{r.graceHours ? ` ووقت السماح (${r.graceHours} ساعة)` : ""}، لحد {r.lateMaxPct}% بالكتير{egpOf(r.lateMaxPct)}.</li>
+      <li>رجوع شغل فيه أخطاء: {r.reworkPct}%{egpOf(r.reworkPct)} في كل مرة.</li>
+      <li>عدم الرد بعد التحذير: {r.noReplyPct}%{egpOf(r.noReplyPct)}.</li>
+      <li>خسارة عميل: {r.clientLossPct}%{egpOf(r.clientLossPct)}{r.banOnLoss ? " + حرمان من المشروع اللي بعده" : ""}.</li>
+      <li>رفض العميل الإعادة: {r.clientRefusePct}%{egpOf(r.clientRefusePct)}{r.banOnRefuse ? " + حرمان من المشروع اللي بعده" : ""}.</li>
+    </ul>
+    {note && <p className="wo-note"><b>قواعد إضافية: </b>{note}</p>}
+  </details>);
+}
+
+export function WorkOrderMember({ role, base, rules, days, projectRules, rulesNote }: { role: WORole; base: number; rules: Rules; days: number; projectRules?: ProjectRules; rulesNote?: string | null }) {
   const st = woState(role);
   if (st === "DRAFT") return <div className="wo wo-empty"><b>أمر الشغل</b><p className="sub">المدير لسه بيجهّز تفاصيل دورك. هيوصلك تنبيه أول ما يتبعت.</p></div>;
   const c = cutoff(role);
@@ -53,6 +69,7 @@ export function WorkOrderMember({ role, base, rules, days }: { role: WORole; bas
     {role.doneDefinition && <div className="wo-block"><b>يعتبر خلص لما</b><p>{role.doneDefinition}</p></div>}
     {days > 0 && <div className="msg bad">إنت متأخر {days} يوم. الخصم دلوقتي {Math.min(days * rules.latePctPerDay, rules.lateMaxPct)}% = {egp(base * Math.min(days * rules.latePctPerDay, rules.lateMaxPct) / 100)} ج.</div>}
     <Schedule base={base} role={role} rules={rules} days={days} />
+    {projectRules && <RulesBox r={projectRules} base={base} note={rulesNote} />}
     {st === "SENT" && <AcceptBox roleId={role.id} />}
     {role.acceptedAt && <p className="sub" style={{ margin: "6px 0" }}>استلمت {fmtCairo(role.acceptedAt)}{role.deliveredAt ? ` · سلّمت ${fmtCairo(role.deliveredAt)}` : ""}</p>}
     {["WORKING", "LATE", "REWORK"].includes(st) && <WorkActions roleId={role.id} canExtend={st === "WORKING"} extPending={role.extStatus === "PENDING"} minExt={dateToCairoInput(role.deadlineAt)} rework={st === "REWORK"} />}

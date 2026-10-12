@@ -8,6 +8,7 @@ import { removeStored } from "@/lib/storage";
 import { requireAdmin, requireUser } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { getSettings } from "@/lib/settings";
+import { rulesFor, readRules } from "@/lib/project-rules";
 
 export type R = { ok?: string; error?: string };
 const date = z.preprocess((v) => (v ? new Date(String(v)) : null), z.date().nullable());
@@ -33,7 +34,9 @@ export async function createProject(_: R, fd: FormData): Promise<R> {
   const cl = clientId ? await db.query.clients.findFirst({ where: eq(clients.id, clientId) }) : null;
   const s = await getSettings();
   const newKinds = fd.getAll("kinds").map(String).filter((k) => ["AUTOMATION", "CHATBOT", "WEBSITE", "APP", "SAAS", "DASHBOARD"].includes(k)).join(",") || null;
-  const [row] = await db.insert(projects).values({ ...p.data, kinds: newKinds, clientId: cl?.id ?? null, rate: await rateFor(p.data.currency), fundPct: Number(s.fundPct), ownerPct: Number(s.ownerPct), teamCapPct: Number(s.teamCapPct) }).returning();
+  const rr = readRules(fd);
+  if (rr.error) return { error: rr.error };
+  const [row] = await db.insert(projects).values({ ...p.data, dedRules: rr.json ?? null, rulesNote: f(fd, "rulesNote")?.slice(0, 4000) ?? null, kinds: newKinds, clientId: cl?.id ?? null, rate: await rateFor(p.data.currency), fundPct: Number(s.fundPct), ownerPct: Number(s.ownerPct), teamCapPct: Number(s.teamCapPct) }).returning();
   // "Banned from the next project": every open ban is consumed by this new project.
   await db.update(bans).set({ consumedByProject: row.id }).where(isNull(bans.consumedByProject));
   if (cl && !["ACTIVE", "DONE"].includes(cl.stage)) {
@@ -62,7 +65,9 @@ export async function updateProject(_: R, fd: FormData): Promise<R> {
   const kinds = fd.getAll("kinds").map(String).filter((k) => ["AUTOMATION", "CHATBOT", "WEBSITE", "APP", "SAAS", "DASHBOARD"].includes(k)).join(",");
   const nd = f(fd, "nextDueDate");
   const rd = Math.max(0, Math.min(30, Number(f(fd, "reminderDays") ?? 3) || 0));
-  await db.update(projects).set({ ...p.data, client: cl?.name ?? p.data.client, clientId: clientId === "" || clientId === undefined ? (fd.has("clientId") ? null : cur.clientId) : (cl?.id ?? cur.clientId),
+  const rr = fd.has("r_latePctPerDay") ? readRules(fd) : {};
+  if (rr.error) return { error: rr.error };
+  await db.update(projects).set({ ...p.data, ...(rr.json ? { dedRules: rr.json, rulesNote: f(fd, "rulesNote")?.slice(0, 4000) ?? null } : {}), client: cl?.name ?? p.data.client, clientId: clientId === "" || clientId === undefined ? (fd.has("clientId") ? null : cur.clientId) : (cl?.id ?? cur.clientId),
     kinds: kinds || null, nextDueDate: nd ? new Date(nd) : null, reminderDays: rd,
     closedAt: p.data.status === "CLOSED" ? (cur.closedAt ?? new Date()) : null }).where(eq(projects.id, id));
   await audit(admin.id, "project_update", `${id} → ${p.data.status}`);
@@ -192,8 +197,11 @@ export async function addDeduction(_: R, fd: FormData): Promise<R> {
   const m = await db.query.roleMembers.findFirst({ where: and(eq(roleMembers.roleId, p.data.roleId), eq(roleMembers.userId, p.data.userId)) });
   if (!m) return { error: "الشخص ده مش في الدور ده." };
   const s = await getSettings();
-  const pct = p.data.type === "OTHER" ? (p.data.pct ?? 0) : Number(s[DED_KEY[p.data.type]]);
-  await db.insert(deductions).values({ ...p.data, pct, banNext: p.data.type === "CLIENT_LOSS" || p.data.type === "CLIENT_REFUSE", createdBy: admin.id });
+  const proj = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
+  const pr = rulesFor(proj?.dedRules, s); // this project's rules
+  const pct = p.data.type === "OTHER" ? (p.data.pct ?? 0) : pr[DED_KEY[p.data.type]];
+  const banNext = (p.data.type === "CLIENT_LOSS" && pr.banOnLoss) || (p.data.type === "CLIENT_REFUSE" && pr.banOnRefuse);
+  await db.insert(deductions).values({ ...p.data, pct, banNext, createdBy: admin.id });
   await audit(admin.id, "deduction_add", `${p.data.userId} ${p.data.type} ${pct}%`);
   done(projectId);
   return { ok: "تم تسجيل الخصم كـ \"قيد المراجعة\". الموظف يقدر يرد عليه من حسابه، وبعدها تعتمده أو ترفضه." };
